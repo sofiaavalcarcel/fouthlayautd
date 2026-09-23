@@ -1,0 +1,349 @@
+<!doctype html>
+<!-- Estructura de la aplicación web: navegación lateral, vistas y cargador global. -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="description" content="Centro de automatización y validación para el equipo QA de UTEL." />
+    <link rel="stylesheet" href="./src/renderer/styles.css" />
+    <title>UTEL QA Automation</title>
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">QA</div>
+          <div>
+          <p class="brand-title">UTEL QA</p>
+          <p class="brand-subtitle">Centro de automatizacion</p>
+          </div>
+        </div>
+
+        <nav class="navigation" aria-label="Navegación principal">
+          <p class="navigation-label">Principal</p>
+          <button class="nav-item active" data-view="dashboard">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-6h6v6"/></svg></span>
+            <span>Dashboard</span>
+          </button>
+
+          <p class="navigation-label">Automatizaciones</p>
+          <button class="nav-item" data-view="forms">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h5M8 16h3"/><path class="nav-icon-dot" d="M17 16h.01"/></svg></span>
+            <span>Formularios</span>
+            <span class="nav-phase">F2</span>
+          </button>
+          <button class="nav-item" data-view="visual">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
+            <span>Monitoreo visual</span>
+            <span class="nav-phase">F3</span>
+          </button>
+          <button class="nav-item" data-view="excel">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5z"/><path d="M8 8h8M8 12h2m2 0h4M8 16h2m2 0h4"/></svg></span>
+            <span>Excel vs Web</span>
+            <span class="nav-phase">F4</span>
+          </button>
+          <button class="nav-item" data-view="bot">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 5v8l-8 5-8-5V8z"/><path d="m8 12 2.5 2.5L16 9"/></svg></span>
+            <span>Bot de nuevos productos</span>
+            <span class="nav-phase">NUEVO</span>
+          </button>
+          <button class="nav-item" data-view="leads-deploy">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 5v8l-8 5-8-5V8z"/><path d="M8 9h8M8 12h8M8 15h5"/></svg></span>
+            <span>Bot Leads Deploy</span>
+            <span class="nav-phase">NUEVO</span>
+          </button>
+          <button class="nav-item" data-view="weekly-auto">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m15.5 8.5-2.1 4.8-4.9 2.2 2.1-4.9z"/><path d="M12 3v2M21 12h-2M12 21v-2M3 12h2"/></svg></span>
+            <span>Weekly Auto</span>
+            <span class="nav-phase">NUEVO</span>
+          </button>
+          <button class="nav-item" data-view="pdp">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></span>
+            <span>PDP vs documentos</span>
+            <span class="nav-phase">NUEVO</span>
+          </button>
+
+          <p class="navigation-label">Administración</p>
+          <button class="nav-item" data-view="history">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6"/><path d="M12 7v5l3 2"/></svg></span>
+            <span>Historial</span>
+          </button>
+          <button class="nav-item" data-view="settings">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.1 2.1-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-2.1-2.1.1-.1A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.5-1H5.3v-3h.2A1.7 1.7 0 0 0 7 10a1.7 1.7 0 0 0-.3-1.9l-.1-.1 2.1-2.1.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5v-.2h3v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 2.1 2.1-.1.1A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.5 1h.2v3h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
+            <span>Configuración</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="connection-dot" id="connection-dot"></div>
+          <div>
+            <p id="connection-label">Conectando...</p>
+            <span id="runtime-label">Aplicación web</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Espacio de trabajo</p>
+            <h1 id="page-title">Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <span class="system-status"><span class="health-dot online"></span> Sistema operativo</span><span class="last-updated" id="last-updated">Sin actualizar</span>
+            <button class="icon-button" id="refresh-button" title="Actualizar dashboard" aria-label="Actualizar dashboard">↻</button>
+            <div class="user-avatar" title="Usuario local">QA</div>
+          </div>
+        </header>
+
+        <section class="view active" id="view-dashboard" data-view-panel="dashboard">
+          <div class="welcome-row">
+            <div>
+              <p class="eyebrow accent">Resumen operativo</p>
+              <h2>Buenos días, equipo QA</h2>
+              <p class="muted">Centraliza tus pruebas y consulta el estado de las automatizaciones.</p>
+            </div>
+            <div class="date-card">
+              <span class="date-icon">◷</span>
+              <div>
+                <span class="small-label">Hoy</span>
+                <strong id="today-label">—</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card metric-blue">
+              <div class="metric-heading"><span>Automatizaciones hoy</span><span class="metric-icon">↗</span></div>
+              <strong id="metric-total">0</strong>
+              <span class="metric-caption">Todas las ejecuciones</span>
+            </article>
+            <article class="metric-card metric-green">
+              <div class="metric-heading"><span>Exitosas</span><span class="metric-icon">✓</span></div>
+              <strong id="metric-success">0</strong>
+              <span class="metric-caption">Resultado PASS</span>
+            </article>
+            <article class="metric-card metric-red">
+              <div class="metric-heading"><span>Fallidas</span><span class="metric-icon">!</span></div>
+              <strong id="metric-failed">0</strong>
+              <span class="metric-caption">Requieren revisión</span>
+            </article>
+            <article class="metric-card metric-purple">
+              <div class="metric-heading"><span>Cambios detectados</span><span class="metric-icon">⌁</span></div>
+              <strong id="metric-changes">0</strong>
+              <span class="metric-caption">Alertas visuales</span>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <article class="panel latest-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Actividad</p>
+                  <h3>Última ejecución</h3>
+                </div>
+                <span class="status-badge pending" id="latest-status">PENDIENTE</span>
+              </div>
+              <div class="latest-content" id="latest-content">
+                <div class="empty-state compact">
+                  <div class="empty-icon">◌</div>
+                  <strong>Aún no hay ejecuciones</strong>
+                  <span>Las automatizaciones aparecerán aquí cuando se construyan en las siguientes fases.</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel health-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Sistema</p>
+                  <h3>Estado del entorno</h3>
+                </div>
+                <span class="health-pulse" id="health-pulse"></span>
+              </div>
+              <div class="health-item">
+                <div class="health-name"><span class="health-dot" id="api-dot"></span> API FastAPI</div>
+                <span class="health-value" id="api-status">Verificando</span>
+              </div>
+              <div class="health-item">
+                <div class="health-name"><span class="health-dot online"></span> Base de datos</div>
+                <span class="health-value online-text">SQLite local</span>
+              </div>
+              <div class="health-item">
+                <div class="health-name"><span class="health-dot online"></span> Modo de ejecución</div>
+                <span class="health-value online-text">Desarrollo</span>
+              </div>
+              <div class="health-note"><span>i</span> Las credenciales de servicios externos se mantienen en el backend.</div>
+            </article>
+          </div>
+
+          <article class="panel history-panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Seguimiento</p>
+                <h3>Últimas ejecuciones</h3>
+              </div>
+              <button class="text-button" data-view="history">Ver historial completo <span>→</span></button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th>Automatización</th><th>Tipo</th><th>Fecha</th><th>Duración</th><th>Estado</th></tr>
+                </thead>
+                <tbody id="history-body">
+                  <tr><td colspan="5" class="table-empty">No hay ejecuciones registradas todavía.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" id="view-forms" data-view-panel="forms">
+          <div class="section-intro"><p class="eyebrow accent">Fase 2</p><h2>Validación de formularios</h2><p class="muted">Configura y ejecuta pruebas de formularios y verificación de leads.</p></div>
+          <div class="coming-card"><div class="coming-icon">▣</div><h3>Módulo preparado para la siguiente fase</h3><p>La estructura de configuración, Playwright y evidencias se incorporará aquí sin afectar el dashboard.</p><span class="status-badge pending">PRÓXIMAMENTE</span></div>
+        </section>
+
+        <section class="view" id="view-visual" data-view-panel="visual">
+          <div class="section-intro"><p class="eyebrow accent">Fase 3</p><h2>Monitoreo visual</h2><p class="muted">Compara screenshots de tu homepage y detecta cambios relevantes.</p></div>
+          <div class="coming-card"><div class="coming-icon">◉</div><h3>Módulo preparado para la siguiente fase</h3><p>La comparación visual, el threshold configurable y el historial se añadirán en este espacio.</p><span class="status-badge pending">PRÓXIMAMENTE</span></div>
+        </section>
+
+        <section class="view" id="view-excel" data-view-panel="excel">
+          <div class="section-intro"><p class="eyebrow accent">Fase 4</p><h2>Excel vs Web / Strapi</h2><p class="muted">Analiza diferencias y prepara sincronizaciones controladas con Strapi.</p></div>
+          <div class="coming-card"><div class="coming-icon">▤</div><h3>Módulo preparado para la siguiente fase</h3><p>La importación configurable, el dry-run y las confirmaciones de cambios se añadirán más adelante.</p><span class="status-badge pending">PRÓXIMAMENTE</span></div>
+        </section>
+
+        <section class="view" id="view-bot" data-view-panel="bot">
+          <div class="section-intro"><p class="eyebrow accent">Nuevo módulo</p><h2>Bot de nuevos productos</h2><p class="muted">Construye un flujo de acciones y validaciones que después ejecutará Playwright.</p></div>
+          <div class="bot-layout">
+            <article class="panel bot-config-panel">
+              <div class="panel-header"><div><p class="eyebrow">Configuración</p><h3>Datos del bot</h3></div><span class="status-badge pending">BORRADOR</span></div>
+              <div class="bot-fields">
+                <label class="field full"><span>Nombre del bot</span><input id="bot-name" type="text" placeholder="Ej. Validar checkout homepage" /></label>
+                <label class="field full"><span>URL inicial</span><input id="bot-url" type="url" placeholder="https://ejemplo.com" /></label>
+                <label class="field"><span>Navegador</span><select id="bot-browser"><option value="chromium">Chromium aislado</option><option value="chrome">Google Chrome - Perfil QA</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
+                <label class="toggle-field"><input id="bot-headless" type="checkbox" checked /><span><strong>Ejecutar en segundo plano</strong><small>Trabajar sin mostrar ni controlar el navegador</small></span></label>
+                <label class="toggle-field"><input id="bot-keep-browser-open" type="checkbox" /><span><strong>Abrir navegador para revisión manual</strong><small>Mostrar la sesión durante la ejecución</small></span></label>
+              </div>
+              <div class="security-note"><span>i</span><p>No guardes contraseñas o tokens en este flujo. Las credenciales deben permanecer en el backend.</p></div>
+              <div class="bot-step-builder">
+                <div class="builder-heading"><div><p class="eyebrow">Constructor</p><h3>Agregar paso</h3></div><span class="step-hint">Acciones simples y verificables</span></div>
+                <div class="bot-fields step-fields">
+                  <label class="field full"><span>Tipo de acción</span><select id="bot-step-type"><option value="goto">Abrir URL</option><option value="click">Hacer click</option><option value="fill">Rellenar campo</option><option value="select">Seleccionar opción</option><option value="assert_text">Verificar texto</option><option value="assert_url">Verificar URL</option><option value="wait">Esperar</option><option value="screenshot">Tomar screenshot</option><option value="scroll">Hacer scroll</option></select></label>
+                  <label class="field"><span id="bot-step-target-label">URL</span><input id="bot-step-target" type="text" placeholder="https://ejemplo.com" /></label>
+                  <label class="field"><span id="bot-step-value-label">Valor</span><input id="bot-step-value" type="text" placeholder="No aplica para este paso" disabled /></label>
+                </div>
+                <button class="primary-button secondary-action" id="bot-add-step" type="button"><span>＋</span> Agregar paso</button>
+              </div>
+            </article>
+
+            <article class="panel bot-flow-panel">
+              <div class="panel-header"><div><p class="eyebrow">Flujo</p><h3>Pasos del bot</h3></div><span class="step-count" id="bot-step-count">0 pasos</span></div>
+              <div class="recording-controls"><button class="record-button" id="bot-stop-record" type="button" disabled><span class="record-dot"></span> Detener grabación</button><button class="secondary-button" id="bot-continue-record" type="button" disabled>Continuar grabación</button></div>
+              <div class="bot-validation" id="bot-validation">Completa la configuración y agrega pasos para validar el flujo.</div>
+              <div class="bot-steps-list" id="bot-steps-list"></div>
+              <div class="bot-run-status" id="bot-run-status">El bot todavía no se ha ejecutado.</div>
+              <div class="bot-flow-actions"><div><button class="secondary-button" id="bot-clear" type="button">Limpiar pasos</button><button class="record-button" id="bot-record" type="button"><span class="record-dot"></span> Grabar pasos</button></div><div><button class="secondary-button" id="bot-save" type="button">Guardar configuración</button><button class="secondary-button" id="bot-validate" type="button">Validar flujo</button><button class="primary-button" id="bot-run" type="button">Ejecutar bot <span>→</span></button></div></div>
+              <details class="bot-preview"><summary>Ver configuración generada</summary><pre id="bot-preview">{}</pre></details>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="view-leads-deploy" data-view-panel="leads-deploy"></section>
+
+        <section class="view" id="view-weekly-auto" data-view-panel="weekly-auto">
+          <div class="section-intro"><p class="eyebrow accent">Nuevo módulo</p><h2>Weekly Auto</h2><p class="muted">Ejecuta un ciclo de apertura y captura de URLs en lote con pausa anti-bloqueo.</p></div>
+          <article class="panel">
+            <div class="panel-header"><div><p class="eyebrow">Configuración semanal</p><h3>Captura automática de páginas</h3><p class="panel-subtitle">Usa URLs manuales o la lista por defecto para revisar disponibilidad y generar evidencia.</p></div><span class="status-badge success">AUTOMÁTICO</span></div>
+            <div class="bot-fields">
+              <label class="field full"><span>Nombre de corrida</span><input id="weekly-auto-name" type="text" placeholder="Weekly Auto" /></label>
+              <label class="toggle-field full-toggle"><input id="weekly-auto-use-default" type="checkbox" checked /><span><strong>Usar URLs por defecto</strong><small>Carga las URLs del catálogo semanal.</small></span></label>
+              <label class="field full"><span>URLs</span><textarea id="weekly-auto-urls" rows="10" placeholder="https://utel.edu.mx\nhttps://utlenlinea.com/...."></textarea></label>
+              <label class="field"><span>Navegador</span><select id="weekly-auto-browser"><option value="chromium">Chromium aislado</option><option value="chrome">Google Chrome - Perfil QA</option><option value="firefox">Firefox</option><option value="webkit">WebKit</option></select></label>
+              <label class="toggle-field"><input id="weekly-auto-headless" type="checkbox" checked /><span><strong>Ejecutar en segundo plano</strong><small>No muestra la ventana del navegador</small></span></label>
+              <label class="toggle-field full-toggle"><input id="weekly-auto-keep-open" type="checkbox" /><span><strong>Dejar navegador abierto</strong><small>Se conserva la última sesión para revisión manual</small></span></label>
+              <div class="bot-fields">
+                <label class="field"><span>Ancho viewport</span><input id="weekly-auto-viewport-width" type="number" min="200" max="7680" step="1" value="1280" /></label>
+                <label class="field"><span>Alto viewport</span><input id="weekly-auto-viewport-height" type="number" min="200" max="7680" step="1" value="680" /></label>
+                <label class="field"><span>Delay entre URLs (seg)</span><input id="weekly-auto-delay" type="number" min="0" step="1" value="0" /></label>
+                <label class="field"><span>Pausa scroll (ms)</span><input id="weekly-auto-scroll-pause" type="number" min="0" step="100" value="2000" /></label>
+                <label class="field"><span>Espera de estabilización (ms)</span><input id="weekly-auto-settle-wait" type="number" min="0" step="100" value="1000" /></label>
+                <label class="field"><span>Límite máximo de URLs</span><input id="weekly-auto-max-urls" type="number" min="1" step="1" placeholder="Sin límite" /></label>
+              </div>
+            </div>
+            <div class="bot-flow-actions" style="margin-top: 12px;">
+              <div>
+                <button class="secondary-button" id="weekly-auto-save" type="button">Guardar configuración</button>
+                <button class="secondary-button" id="weekly-auto-run-preview" type="button">Validar configuración</button>
+                <button class="secondary-button" id="weekly-auto-clear" type="button">Restaurar predeterminados</button>
+              </div>
+              <div>
+                <button class="danger-button" id="weekly-auto-stop" type="button" hidden>Detener corrida</button>
+                <button class="primary-button" id="weekly-auto-run" type="button">Iniciar semanal <span>→</span></button>
+              </div>
+            </div>
+            <div class="bot-run-status" id="weekly-auto-run-status">Configura la corrida para empezar.</div>
+            <div id="weekly-auto-message" class="bot-summary muted" style="margin-top: 10px;">Sin actividad.</div>
+            <pre class="bot-terminal" id="weekly-auto-terminal" aria-live="polite">[sistema] Esperando inicio de ejecución.</pre>
+            <div id="weekly-auto-stats" class="pdp-summary" style="margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;"></div>
+            <div class="bot-steps-list" id="weekly-auto-results"></div>
+          </article>
+        </section>
+
+        <section class="view" id="view-pdp" data-view-panel="pdp">
+          <div class="section-intro"><p class="eyebrow accent">Nuevo módulo</p><h2>Validación PDP vs DOCX</h2><p class="muted">Compara el contenido de las páginas de producto con la matriz Excel y su documento de referencia.</p></div>
+          <article class="panel pdp-semantic-panel">
+            <div class="panel-header"><div><p class="eyebrow">MVP genérico</p><h3>Cualquier documento vs una página</h3></div><span class="status-badge success">DOCUMENTO = VERDAD</span></div>
+            <p class="pdp-help">Carga un documento nuevo y escribe la URL. El sistema detectará títulos, secciones, listas, tablas, preguntas, relaciones y contenido visible sin depender de nombres fijos.</p>
+            <div class="pdp-semantic-form">
+              <label class="pdp-file-field"><span>Documento fuente</span><input id="pdp-source-file" type="file" accept=".pdf,.docx,.xlsx,.txt,.md,.csv" /><small id="pdp-source-name">Aún no has seleccionado un documento.</small></label>
+              <label class="pdp-file-field"><span>URL de la página</span><input id="pdp-page-url" type="url" placeholder="https://ejemplo.com/pagina" /><small>Se analiza el contenido visible y relevante.</small></label>
+              <label class="pdp-ai-option"><input id="pdp-use-ai" type="checkbox" checked /><span>Usar IA para posibles equivalencias y ambigüedades (Gemini + Groq + Ollama).</span></label>
+              <button class="primary-button pdp-run-button" id="pdp-semantic-run" type="button">Analizar y comparar <span>→</span></button>
+            </div>
+            <div class="pdp-run-status" id="pdp-semantic-status">Selecciona un documento y una URL para iniciar la verificación.</div>
+            <div class="pdp-summary" id="pdp-semantic-summary"></div>
+            <div class="pdp-results-list" id="pdp-semantic-results"><div class="bot-empty"><div class="empty-icon">▤</div><strong>No hay reporte todavía</strong><span>Los hallazgos aparecerán agrupados por sección.</span></div></div>
+          </article>
+          <div class="pdp-layout">
+            <article class="panel pdp-upload-panel">
+              <div class="panel-header"><div><p class="eyebrow">Fuentes</p><h3>Archivos a revisar</h3></div><span class="status-badge pending">LOCAL</span></div>
+              <p class="pdp-help">El Excel debe tener una columna de <strong>Programa</strong>, <strong>Carrera</strong> o <strong>Nombre</strong>, y otra de <strong>URL</strong>, <strong>Link</strong>, <strong>Enlace</strong> o <strong>PDP</strong>.</p>
+              <label class="pdp-file-field"><span>1. Matriz de programas (.xlsx)</span><input id="pdp-excel-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /><small id="pdp-excel-name">Aún no has seleccionado un Excel.</small></label>
+              <label class="pdp-file-field"><span>2. Documento de contenido (.docx)</span><input id="pdp-docx-file" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" /><small id="pdp-docx-name">Aún no has seleccionado un DOCX.</small></label>
+              <div class="pdp-guide"><strong>Qué se valida</strong><span>Título, descripción, asignaturas y preguntas frecuentes. El DOCX puede contener varios programas; cada bloque debe iniciar con el nombre del programa.</span></div>
+              <button class="primary-button pdp-run-button" id="pdp-run" type="button">Comparar PDPs <span>→</span></button>
+            </article>
+            <article class="panel pdp-results-panel">
+              <div class="panel-header"><div><p class="eyebrow">Resultado</p><h3>Reporte de comparación</h3></div><span class="step-count" id="pdp-result-count">Sin ejecutar</span></div>
+              <div class="pdp-run-status" id="pdp-run-status">Comparte los dos archivos para iniciar una validación.</div>
+              <div class="pdp-summary" id="pdp-summary"></div>
+              <div class="pdp-results-list" id="pdp-results-list"><div class="bot-empty"><div class="empty-icon">▤</div><strong>No hay resultados todavía</strong><span>Al ejecutar se mostrará una PDP por programa y sus diferencias.</span></div></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="view-history" data-view-panel="history">
+          <div class="section-intro"><p class="eyebrow accent">Trazabilidad</p><h2>Historial de ejecuciones</h2><p class="muted">Consulta los resultados almacenados por el backend local.</p></div>
+          <article class="panel history-panel standalone-history"><div class="table-wrapper"><table><thead><tr><th>Automatización</th><th>Tipo</th><th>Fecha</th><th>Duración</th><th>Estado</th></tr></thead><tbody id="full-history-body"><tr><td colspan="5" class="table-empty">No hay ejecuciones registradas todavía.</td></tr></tbody></table></div></article>
+        </section>
+
+        <section class="view" id="view-settings" data-view-panel="settings">
+          <div class="section-intro"><p class="eyebrow accent">Entorno</p><h2>Configuración</h2><p class="muted">Valores generales del servidor de automatizaciones.</p></div>
+          <article class="panel settings-card"><div class="setting-row"><div><strong>API del servidor</strong><span>Endpoint utilizado por la interfaz web o desktop</span></div><code id="api-url-label">http://127.0.0.1:8000</code></div><div class="setting-row"><div><strong>Persistencia</strong><span>Base de datos del servidor local</span></div><code>SQLite</code></div><div class="setting-row"><div><strong>Credenciales</strong><span>Se configuran exclusivamente en el archivo .env del backend</span></div><span class="status-badge success">PROTEGIDAS</span></div></article>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div class="interface-loader" id="interface-loader" aria-hidden="true">
+      <div class="loader-orbit"><i></i><i></i><i></i></div>
+      <div class="loader-copy"><span id="loader-kicker">SISTEMA</span><strong id="loader-message">Sincronizando telemetría</strong><small>Canal seguro · procesamiento local</small></div>
+      <div class="loader-progress"><span></span></div>
+    </div>
+    <script type="module" src="./src/renderer/app.js?v=leads-deploy-isolated-4"></script>
+  </body>
+</html>

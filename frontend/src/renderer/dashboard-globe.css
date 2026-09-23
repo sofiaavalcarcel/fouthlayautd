@@ -1,0 +1,87 @@
+/* Contenedor estable del planeta 3D: conserva espacio para el canvas y deja
+ * que su halo sobresalga sin cortar las rutas que salen de la esfera. */
+#view-dashboard .dashboard-globe,
+#view-dashboard .dashboard-globe.three-globe-active {
+  display: block !important;
+  width: clamp(238px, 19vw, 304px) !important;
+  height: clamp(238px, 19vw, 304px) !important;
+  min-width: 0 !important;
+  aspect-ratio: 1 / 1;
+  position: relative;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle at 42% 38%, rgba(6, 183, 6, .10), transparent 44%),
+    radial-gradient(circle at 64% 67%, rgba(64, 0, 188, .08), transparent 50%),
+    transparent !important;
+  box-shadow: none !important;
+  cursor: grab;
+  isolation: isolate;
+  touch-action: none;
+  user-select: none;
+}
+
+/* Halo orbital de baja intensidad que mantiene la escena legible sobre el
+ * panel claro sin convertirse en una placa decorativa independiente. */
+#view-dashboard .dashboard-globe.three-globe-active::before,
+#view-dashboard .dashboard-globe.three-globe-active::after {
+  content: "";
+  position: absolute;
+  inset: 5%;
+  z-index: -1;
+  border: 1px solid rgba(6, 183, 6, .22);
+  border-radius: 50%;
+  transform: rotate(24deg) scaleY(.32);
+  box-shadow: 0 0 18px rgba(6, 183, 6, .10);
+  pointer-events: none;
+}
+#view-dashboard .dashboard-globe.three-globe-active::after { inset: -1%; border-color: rgba(64, 0, 188, .17); transform: rotate(-38deg) scaleY(.45); }
+#view-dashboard .dashboard-globe.three-globe-active.is-dragging { cursor: grabbing; }
+
+#view-dashboard .dashboard-globe.three-globe-active > canvas {
+  position: absolute;
+  inset: -14%;
+  width: 128% !important;
+  height: 128% !important;
+  display: block;
+  outline: none;
+  filter:
+    drop-shadow(0 0 12px rgba(6, 183, 6, .18))
+    drop-shadow(0 0 28px rgba(6, 183, 6, .10))
+    drop-shadow(0 0 24px rgba(64, 0, 188, .10));
+}
+
+/* Respaldo visual si Three.js no puede inicializarse o la red está bloqueada. */
+#view-dashboard .dashboard-globe:not(.three-globe-active) {
+  width: 224px !important;
+  height: 224px !important;
+  background: radial-gradient(circle at 35% 28%, rgba(159, 231, 112, .82), rgba(28, 45, 26, .96) 64%) !important;
+  box-shadow: inset -22px -18px 44px rgba(0, 0, 0, .30), 0 0 28px rgba(6, 183, 6, .16) !important;
+}
+
+#view-dashboard .latest-panel:has(.three-globe-active) { overflow: visible; }
+
+@media (max-width: 1180px) {
+  #view-dashboard .dashboard-globe,
+  #view-dashboard .dashboard-globe.three-globe-active { width: 214px !important; height: 214px !important; }
+}
+
+@media (max-width: 900px) {
+  #view-dashboard .dashboard-globe,
+  #view-dashboard .dashboard-globe.three-globe-active { width: 190px !important; height: 190px !important; }
+}
+
+@media (max-width: 700px) {
+  #view-dashboard .dashboard-globe,
+  #view-dashboard .dashboard-globe.three-globe-active { width: 184px !important; height: 184px !important; }
+}
+
+@media (max-width: 520px) {
+  #view-dashboard .dashboard-globe,
+  #view-dashboard .dashboard-globe.three-globe-active { width: 174px !important; height: 174px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #view-dashboard .dashboard-globe.three-globe-active { cursor: default; }
+}

@@ -1,0 +1,7 @@
+/* Escala común de los bots principales. Solo contiene presentación y deja
+ * que el shell global controle navegación, espaciado y responsive. */
+#view-bot .bot-layout, #view-leads-deploy .bot-layout { align-items: start; }
+#view-bot .bot-config-panel, #view-bot .bot-flow-panel,
+#view-leads-deploy .bot-config-panel, #view-leads-deploy .bot-flow-panel { min-width: 0; }
+#view-bot .bot-flow-actions, #view-leads-deploy .bot-flow-actions { flex-wrap: wrap; }
+#view-bot .bot-preview, #view-leads-deploy .bot-preview { max-width: 100%; }

@@ -1,0 +1,108 @@
+/* Capa visual inspirada en LiquidButton: el relleno asciende desde el borde
+ * inferior y el contenido original permanece por encima de la animación. */
+.liquid-button {
+  --liquid-button-fill: var(--brand-deep);
+  --liquid-button-fill-soft: color-mix(in srgb, var(--liquid-button-fill) 15%, transparent);
+  --liquid-button-hover-text: #ffffff;
+  --liquid-button-wave-height: 145%;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transform: translateZ(0);
+  transition: color 260ms ease, border-color 260ms ease, box-shadow 260ms ease, transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* El z-index negativo mantiene la capa detrás del texto, pero por encima del
+ * fondo del botón gracias a isolation, sin tener que envolver sus contenidos. */
+.liquid-button::before {
+  position: absolute;
+  z-index: -1;
+  right: -12%;
+  bottom: 0;
+  left: -12%;
+  height: var(--liquid-button-wave-height);
+  content: "";
+  background: var(--liquid-button-fill);
+  border-radius: 48% 52% 0 0 / 18% 22% 0 0;
+  opacity: 0.94;
+  transform: translateY(calc(100% - 3px)) rotate(-1.5deg);
+  transform-origin: center bottom;
+  transition: transform 460ms cubic-bezier(0.16, 1, 0.3, 1), border-radius 460ms ease;
+  pointer-events: none;
+}
+
+/* Una segunda capa fina crea el borde orgánico de la ola sin añadir ruido al
+ * layout ni modificar las dimensiones del control. */
+.liquid-button::after {
+  position: absolute;
+  z-index: -1;
+  right: -20%;
+  bottom: -18%;
+  left: -20%;
+  height: 42%;
+  content: "";
+  background: var(--liquid-button-fill-soft);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translateY(35%) rotate(2deg);
+  transition: opacity 260ms ease, transform 460ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.liquid-button:hover,
+.liquid-button:focus-visible {
+  color: var(--liquid-button-hover-text);
+  transform: translateY(-1px) scale(1.025);
+}
+
+.liquid-button:hover::before,
+.liquid-button:focus-visible::before {
+  border-radius: 44% 56% 0 0 / 28% 32% 0 0;
+  transform: translateY(0) rotate(0deg);
+}
+
+.liquid-button:hover::after,
+.liquid-button:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0) rotate(-2deg);
+}
+
+.liquid-button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.965);
+}
+
+.liquid-button:disabled,
+.liquid-button[aria-disabled="true"] {
+  transform: none;
+}
+
+.liquid-button:disabled::before,
+.liquid-button:disabled::after,
+.liquid-button[aria-disabled="true"]::before,
+.liquid-button[aria-disabled="true"]::after {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+/* Variantes que conservan la semántica cromática ya usada por la interfaz. */
+.liquid-button[data-liquid-variant="primary"] { --liquid-button-fill: var(--brand-lime); --liquid-button-hover-text: var(--brand-deep); }
+.liquid-button[data-liquid-variant="secondary"] { --liquid-button-fill: var(--brand-green); --liquid-button-hover-text: #ffffff; }
+.liquid-button[data-liquid-variant="danger"] { --liquid-button-fill: var(--danger); --liquid-button-hover-text: #ffffff; }
+.liquid-button[data-liquid-variant="record"] { --liquid-button-fill: var(--brand-purple); --liquid-button-hover-text: #ffffff; }
+.liquid-button[data-liquid-variant="navigation"] { --liquid-button-fill: var(--brand-green); --liquid-button-hover-text: var(--brand-deep); }
+.liquid-button[data-liquid-variant="card"] { --liquid-button-fill: var(--brand-lime); --liquid-button-hover-text: var(--brand-deep); }
+.liquid-button[data-liquid-variant="quiet"] { --liquid-button-fill: var(--brand-green); --liquid-button-hover-text: var(--brand-deep); }
+.liquid-button[data-liquid-variant="icon"] { --liquid-button-fill: var(--brand-lime); --liquid-button-hover-text: var(--brand-deep); }
+
+/* Los botones de navegación del OptionWheel tienen su propia composición y
+ * quedan fuera de la capa para que el arco conserve su lectura y selección. */
+.option-wheel__item { overflow: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-button { transition: color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+  .liquid-button::before,
+  .liquid-button::after { transition: none; }
+  .liquid-button:hover,
+  .liquid-button:focus-visible,
+  .liquid-button:active:not(:disabled) { transform: none; }
+}

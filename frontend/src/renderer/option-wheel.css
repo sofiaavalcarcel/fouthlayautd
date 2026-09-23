@@ -1,0 +1,95 @@
+/* Capa visual del OptionWheel: en escritorio sustituye la lista del sidebar
+ * por un carrusel curvo; en pantallas pequeñas se conserva la navegación
+ * convencional para mantener todos los accesos visibles y táctiles. */
+.option-wheel { display: none; }
+
+.navigation.option-wheel-active {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.navigation.option-wheel-active > .navigation-label,
+.navigation.option-wheel-active > .nav-item,
+.navigation.option-wheel-active > .nav-submenu { display: none; }
+
+.navigation.option-wheel-active > .option-wheel { display: block; }
+
+.option-wheel--sidebar {
+  position: relative;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 360px;
+  height: 100%;
+  margin: 3px 0 8px;
+  overflow: hidden;
+  border-left: 1px solid rgba(159, 231, 112, 0.22);
+  border-radius: 0 12px 12px 0;
+  cursor: grab;
+  isolation: isolate;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 9%, #000 91%, transparent 100%);
+  touch-action: none;
+  user-select: none;
+}
+
+.option-wheel--sidebar::before {
+  position: absolute;
+  inset: 50% 7px auto 7px;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(159, 231, 112, 0.48), transparent);
+  box-shadow: 0 0 14px rgba(6, 183, 6, 0.38);
+  pointer-events: none;
+}
+
+.option-wheel--dragging { cursor: grabbing; }
+
+.option-wheel__item {
+  position: absolute;
+  top: 50%;
+  left: var(--ow-inset);
+  width: calc(100% - 18px);
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  gap: 10px;
+  padding: 8px 9px;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-family: "Work Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+  transform-origin: left center;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  will-change: transform, opacity, filter;
+}
+
+.option-wheel__item:hover { color: #ffffff; background: rgba(255, 255, 255, 0.08); border-color: rgba(159, 231, 112, 0.28); }
+.option-wheel__item--selected { color: var(--brand-deep); background: var(--brand-green); border-color: var(--brand-green); box-shadow: 0 6px 18px rgba(6, 183, 6, 0.23); font-weight: 700; }
+.option-wheel__item--selected:hover { color: var(--brand-deep); background: var(--brand-green); }
+.option-wheel__item .nav-icon { flex: 0 0 26px; width: 26px; height: 26px; }
+.option-wheel__item .nav-subitem-mark { flex: 0 0 19px; width: 19px; height: 19px; }
+.option-wheel__item .nav-icon-image { width: 22px; height: 22px; }
+.option-wheel__item .nav-subitem-icon { width: 17px; height: 17px; }
+.option-wheel__item .nav-phase { margin-left: auto; }
+.option-wheel__item .nav-chevron { margin-left: auto; }
+.option-wheel__item--selected .nav-icon, .option-wheel__item--selected .nav-subitem-mark { color: var(--brand-deep); }
+.option-wheel__item--selected .nav-phase { color: var(--brand-deep); border-color: rgba(28, 45, 26, 0.24); }
+
+.option-wheel__item:focus-visible,
+.option-wheel:focus-visible { outline: 2px solid var(--brand-lime); outline-offset: 2px; }
+
+@media (max-width: 800px) {
+  .navigation.option-wheel-active > .navigation-label { display: block; }
+  .navigation.option-wheel-active > .nav-item { display: flex; }
+  .navigation.option-wheel-active > .nav-submenu { display: grid; }
+  .navigation.option-wheel-active > .option-wheel { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option-wheel__item { transition: none; }
+}

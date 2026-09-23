@@ -1,0 +1,6 @@
+/* La presentación usa el sistema visual global UTEL y conserva este punto de
+ * extensión para no cambiar el cargador existente. */
+#view-bot .bot-page-intro { margin-bottom: 22px; }
+#view-bot .bot-page-intro .muted { max-width: 720px; }
+#view-bot .bot-hero, #view-bot .np-header-date { display: none; }
+#view-bot .np-guide-row { display: flex; justify-content: flex-end; padding: 0 14px 14px; }

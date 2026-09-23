@@ -1,0 +1,94 @@
+/* PDP: secciones plegables y texto contenido dentro de cada tarjeta. */
+.view > .section-intro h2 { display: none; }
+.pdp-pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 18px 0 4px; }
+.pdp-pagination button { min-width: 32px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; color: #8fa3bf; background: rgba(255,255,255,.025); cursor: pointer; font: inherit; font-size: 10px; }
+.pdp-pagination button:hover, .pdp-pagination button.active { border-color: #5d9cff; color: #e0ebfa; background: rgba(93,156,255,.12); }
+.pdp-pagination button:disabled { cursor: default; opacity: .4; }
+.pdp-pagination span { padding: 0 7px; color: #71839e; font-size: 10px; }
+.pdp-mode-switcher { display: flex; gap: 14px; margin: 22px 0 16px; }
+.pdp-mode-button { min-width: 190px; padding: 14px 22px; border: 1px solid #365477; border-radius: 18px; color: #9eb1ca; background: rgba(255,255,255,.025); cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; transition: .18s; }
+.pdp-mode-button:hover, .pdp-mode-button.active { border-color: #5d9cff; color: #e0ebfa; background: rgba(93,156,255,.13); box-shadow: 0 8px 22px rgba(0,0,0,.12); }
+#pdp-single-panel, #pdp-bulk-panel { min-width: 0; }
+.pdp-results-panel .pdp-results-list { max-height: none; overflow: visible; }
+.pdp-program-result { cursor: pointer; transition: border-color .18s, background .18s; }
+.pdp-program-result:hover { border-color: rgba(93,156,255,.45); background: rgba(93,156,255,.045); }
+.pdp-modal[hidden] { display: none; }
+.pdp-modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 28px; }
+.pdp-modal-backdrop { position: absolute; inset: 0; background: rgba(3,8,18,.78); backdrop-filter: blur(3px); }
+.pdp-modal-card { position: relative; width: min(900px, 94vw); max-height: 88vh; overflow: auto; padding: 25px; border: 1px solid rgba(93,156,255,.3); border-radius: 14px; background: #121d30; box-shadow: 0 25px 70px rgba(0,0,0,.45); }
+.pdp-modal-close { position: absolute; top: 12px; right: 14px; width: 30px; height: 30px; border: 0; border-radius: 7px; color: #9eb1ca; background: transparent; cursor: pointer; font-size: 22px; }
+.pdp-modal-close:hover { color: #fff; background: rgba(255,255,255,.08); }
+.pdp-modal-title { margin: 0; padding-right: 35px; color: #e0ebfa; font-size: 20px; }
+.pdp-modal-url { display: block; margin-top: 7px; color: #6f9ddd; font-size: 10px; overflow-wrap: anywhere; }
+.pdp-modal-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+.pdp-modal-filter { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; color: #9eb1ca; background: rgba(255,255,255,.025); cursor: pointer; font-size: 10px; }
+.pdp-modal-filter.active, .pdp-modal-filter:hover { border-color: #5d9cff; color: #e0ebfa; background: rgba(93,156,255,.12); }
+.pdp-modal-sections { display: grid; gap: 10px; }
+.pdp-modal-section { padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.02); }
+.pdp-modal-section.pass { border-color: rgba(67,211,156,.28); }.pdp-modal-section.warning { border-color: rgba(255,194,84,.28); }.pdp-modal-section.fail { border-color: rgba(255,113,132,.28); }
+.pdp-modal-section h4 { margin: 0 0 8px; color: #dce8f8; font-size: 12px; }.pdp-modal-section p { margin: 5px 0; color: #aebed3; font-size: 11px; line-height: 1.5; }.pdp-modal-section p strong { color: #dce8f8; }
+@media (max-width: 650px) { .pdp-mode-switcher { gap: 8px; }.pdp-mode-button { min-width: 0; flex: 1; padding: 12px 10px; } }
+.pdp-finding-section {
+  margin-top: 16px;
+  padding: 0 17px 17px;
+  overflow: hidden;
+}
+.pdp-finding-section:first-child { margin-top: 0; }
+.pdp-finding-section > summary { list-style: none; }
+.pdp-finding-section > summary::-webkit-details-marker { display: none; }
+.pdp-finding-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 17px 0;
+  border-bottom: 0;
+  cursor: pointer;
+}
+.pdp-finding-section-header::after { content: "＋"; flex: 0 0 auto; margin-left: 6px; color: #7890b0; font-size: 17px; }
+.pdp-section-toggle { width: 100%; border: 0; color: inherit; background: transparent; text-align: left; font: inherit; }
+.pdp-section-toggle::after { display: none; }
+.pdp-section-heading { min-width: 0; flex: 1 1 auto; }
+.pdp-section-chevron { flex: 0 0 auto; margin-left: 6px; color: #7890b0; font-size: 17px; }
+.pdp-finding-section[open] > .pdp-finding-section-header { border-bottom: 1px solid var(--line); }
+.pdp-finding-section[open] > .pdp-finding-section-header::after { content: "−"; }
+.pdp-finding-section.is-open .pdp-section-chevron { font-size: 0; }
+.pdp-finding-section.is-open .pdp-section-chevron::after { content: "−"; font-size: 17px; }
+.pdp-finding-section-header > div:first-child { min-width: 0; }
+.pdp-section-kicker {
+  display: block;
+  max-width: 100%;
+  margin-bottom: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdp-finding-section h4 { max-width: 100%; overflow-wrap: anywhere; line-height: 1.35; }
+.pdp-section-counts { flex: 0 0 auto; max-width: 45%; }
+.pdp-section-counts span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.3; }
+.pdp-section-body { min-width: 0; }
+.pdp-finding-section .pdp-section-body { display: none !important; }
+.pdp-finding-section.is-open .pdp-section-body { display: block !important; }
+.pdp-section-filters { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0 10px; }
+.pdp-filter { max-width: 100%; overflow: hidden; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.pdp-section-findings { display: grid; gap: 9px; min-width: 0; }
+.pdp-section-findings .pdp-semantic-finding { min-width: 0; margin: 0; }
+.pdp-section-findings .pdp-semantic-finding summary {
+  display: grid;
+  grid-template-columns: auto minmax(72px, auto) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+}
+.pdp-section-findings .pdp-semantic-finding summary strong { min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdp-section-findings .pdp-semantic-finding summary > span:last-child { min-width: 0; overflow: hidden; overflow-wrap: anywhere; text-overflow: ellipsis; white-space: nowrap; }
+.pdp-section-findings .pdp-finding-detail { min-width: 0; }
+.pdp-section-findings .pdp-finding-detail > div { min-width: 0; }
+.pdp-section-findings .pdp-finding-detail p, .pdp-section-findings .pdp-finding-detail small { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; line-height: 1.55; }
+.pdp-filter[hidden], .pdp-semantic-finding[hidden] { display: none; }
+@media (max-width: 900px) {
+  .pdp-finding-section-header { align-items: flex-start; flex-wrap: wrap; }
+  .pdp-section-counts { justify-content: flex-start; max-width: 100%; }
+  .pdp-section-findings .pdp-semantic-finding summary { grid-template-columns: auto minmax(0, 1fr); }
+  .pdp-section-findings .pdp-semantic-finding summary > span:last-child { grid-column: 1 / -1; margin-top: 5px; white-space: normal; }
+}

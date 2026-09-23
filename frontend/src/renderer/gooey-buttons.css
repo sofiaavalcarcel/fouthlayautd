@@ -1,0 +1,4 @@
+/* El efecto de partículas original no corresponde al lenguaje institucional
+ * de UTEL. El controlador JS se conserva para no tocar contratos de botones,
+ * pero su capa queda visualmente desactivada. */
+.gooey-button-layer { display: none !important; }

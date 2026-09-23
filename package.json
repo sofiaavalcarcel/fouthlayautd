@@ -1,0 +1,20 @@
+{
+  "name": "qa-automation-desktop",
+  "version": "0.1.0",
+  "description": "Plataforma web y desktop para centralizar automatizaciones de QA.",
+  "private": true,
+  "main": "frontend/src/main.js",
+  "scripts": {
+    "start": "node scripts/launch-electron.js",
+    "dev": "node scripts/launch-electron.js",
+    "web": "node scripts/launch-web.js",
+    "backend": "python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000",
+    "test:backend": "python -m pytest backend/tests"
+  },
+  "allowScripts": {
+    "electron@36.4.0": true
+  },
+  "devDependencies": {
+    "electron": "^36.4.0"
+  }
+}

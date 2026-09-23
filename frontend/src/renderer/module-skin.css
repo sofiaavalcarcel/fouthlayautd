@@ -1,0 +1,25 @@
+/* Ajustes compartidos para módulos montados después de cargar la vista. */
+.view > .panel { margin-top: 0; }
+.view > .panel[style*="margin-top"] { margin-top: 0 !important; }
+.view > .section-intro + .panel { margin-top: 0; }
+.view > .panel .bot-fields { margin-top: 18px; }
+.view > .panel .bot-flow-actions[style*="margin-top"] { margin-top: 16px !important; }
+.view > .panel .pdp-summary[style], .view > .panel .bot-summary[style] { margin-top: 13px !important; }
+
+/* Los módulos nuevos reutilizan la misma envolvente y solo cambian el
+ * contenido; esto mantiene uniforme la lectura entre vistas. */
+#view-weekly-photos > .panel,
+#view-weekly-forms > .panel,
+#view-weekly-performance > .panel,
+#view-weekly-leads > .panel { padding: 20px; }
+#view-weekly-photos > .section-intro,
+#view-weekly-forms > .section-intro,
+#view-weekly-performance > .section-intro,
+#view-weekly-leads > .section-intro { margin-bottom: 22px; }
+
+@media (max-width: 720px) {
+  #view-weekly-photos > .panel,
+  #view-weekly-forms > .panel,
+  #view-weekly-performance > .panel,
+  #view-weekly-leads > .panel { padding: 16px; }
+}
