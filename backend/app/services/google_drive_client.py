@@ -131,3 +131,39 @@ class GoogleDriveClient:
             raise GoogleDriveClientError(message) from error
         except httpx.HTTPError as error:
             raise GoogleDriveClientError("No se pudo descargar el documento de Google Drive.") from error
+
+    async def find_document_by_name(self, name: str) -> str:
+        """Find one Google document by the exact name used in the workbook."""
+        token = await self._get_access_token()
+        query = "name = '{}' and trashed = false".format(name.replace("'", "\\'"))
+        try:
+            response = await self._client.get(
+                f"{DRIVE_API_URL}/files",
+                params={
+                    "q": query,
+                    "spaces": "drive",
+                    "pageSize": 10,
+                    "orderBy": "modifiedTime desc",
+                    "fields": "files(id,name,mimeType,modifiedTime)",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            response.raise_for_status()
+            files = response.json().get("files", [])
+        except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            if status in {401, 403}:
+                raise GoogleDriveClientError(
+                    "Google Drive rechazó la búsqueda del documento. Verifica los permisos de la cuenta autorizada."
+                ) from error
+            raise GoogleDriveClientError(f"Google Drive respondió HTTP {status} al buscar el documento.") from error
+        except (httpx.HTTPError, ValueError) as error:
+            raise GoogleDriveClientError("No se pudo buscar el documento en Google Drive.") from error
+
+        if not files:
+            raise GoogleDriveClientError(f"No se encontró en Google Drive el documento {name!r}.")
+        if len(files) > 1:
+            raise GoogleDriveClientError(
+                f"Hay varios documentos con el nombre {name!r} en Google Drive; usa un enlace específico."
+            )
+        return str(files[0]["id"])

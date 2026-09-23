@@ -155,7 +155,7 @@ def test_description_runner_updates_descriptions_and_default_layout(tmp_path):
     results, summary = asyncio.run(StrapiDescriptionRunner(FakeClient(), "Argentina", "es-AR", dry_run=False).run([ProductRow("Sheet", 2, "Programa A", str(source))]))
     assert results[0].status == "UPDATED"
     assert summary.updated == 1
-    assert calls == [((12, {"shortDescription": "Descripcion PDP original.", "longDescription": "Descripcion PDP original.", "contentDescription": "¿Qué materias se estudian?\n\nContenido de asignaturas.", "customLayoutPDP": "fourthLayout", "enableExtraButtons": True, "enableForm": True}), {})]
+    assert calls == [((12, {"shortDescription": "Descripcion PDP original.", "longDescription": "Descripcion PDP original.", "contentDescription": "¿Qué materias se estudian?\n\nContenido de asignaturas.", "customLayoutPDP": "fourthLayout", "enableExtraButtons": True, "enableForm": True}), {"locale": "es-AR"})]
 
 
 def test_description_runner_sets_third_layout_and_product_specific_tabs(tmp_path):

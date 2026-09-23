@@ -72,7 +72,13 @@ class StrapiClient:
                     raise StrapiClientError("No se pudo conectar con Strapi.") from error
                 await asyncio.sleep(0.25 * (2**attempt))
             except httpx.HTTPStatusError as error:
-                raise StrapiClientError(f"Strapi respondio HTTP {error.response.status_code}.") from error
+                status = error.response.status_code
+                if status == 401:
+                    raise StrapiClientError("El token del CMS no es válido o expiró.") from error
+                if status == 403:
+                    path = error.response.request.url.path
+                    raise StrapiClientError(f"El CMS rechazó el acceso a {path} (HTTP 403). El token necesita permisos para este endpoint.") from error
+                raise StrapiClientError(f"Strapi respondió HTTP {status}.") from error
         raise StrapiClientError("La peticion a Strapi fallo.") from last_error
 
     async def find_product(self, program: str, locale: str, *, title_field: str = "title", seo_field: str = "seo", status: str = "draft") -> dict[str, Any]:
@@ -100,8 +106,9 @@ class StrapiClient:
                 return entries[0]
         raise StrapiNotFoundError(f"No se encontro el programa {program!r} para {locale}.")
 
-    async def update_product(self, identifier: int | str, attributes: dict[str, Any]) -> dict[str, Any]:
-        response = await self._request("PUT", f"{self.endpoint}/{identifier}", json={"data": attributes})
+    async def update_product(self, identifier: int | str, attributes: dict[str, Any], *, locale: str | None = None) -> dict[str, Any]:
+        params = {"locale": locale} if locale else None
+        response = await self._request("PUT", f"{self.endpoint}/{identifier}", params=params, json={"data": attributes})
         return response.json()
 
     async def get_product_sync_attributes(self, identifier: int | str, locale: str) -> dict[str, Any]:
@@ -155,6 +162,21 @@ class StrapiClient:
             "pagination[pageSize]": 10,
         })
         entries = response.json().get("data", [])
+        return entries[0] if entries else None
+
+    async def find_certification_for_product(self, title: str, product_id: int | str, locale: str) -> dict[str, Any] | None:
+        """Find a certification only when related to this exact product."""
+        response = await self._request("GET", "/api/certifications", params={
+            "filters[title][$eq]": title,
+            "filters[products][id][$eq]": product_id,
+            "locale": locale,
+            "pagination[pageSize]": 10,
+        })
+        entries = response.json().get("data", [])
+        if len(entries) > 1:
+            raise StrapiAmbiguousError(
+                f"Hay varias certificaciones {title!r} relacionadas con el producto {product_id}."
+            )
         return entries[0] if entries else None
 
     async def update_certification(self, identifier: int | str, attributes: dict[str, Any]) -> dict[str, Any]:

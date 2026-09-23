@@ -287,6 +287,9 @@ class StrapiDescriptionRunner:
                 return "google-drive-document.docx", response.content
         path = Path(source.strip('\\"'))
         if not path.is_file():
+            if self.google_drive_client and self.google_drive_client.is_configured:
+                document_id = await self.google_drive_client.find_document_by_name(source.strip('\\"'))
+                return "google-drive-document.docx", await self.google_drive_client.export_docx(document_id)
             raise ValueError(f"No se encontro el Documento PDP: {source}")
         return str(path), path.read_bytes()
 
@@ -639,9 +642,15 @@ class StrapiDescriptionRunner:
                         if specific_certification and specific_certification.get("id") is not None
                         else None
                     )
-                    current_academic_validity["validations"] = (
-                        [{"id": specific_validation_id}] if specific_validation_id is not None else []
-                    )
+                    validation_ids = ([{"id": specific_validation_id}] if specific_validation_id is not None else [])
+                    equivalence_certification = None
+                    if hasattr(self.client, "find_certification_for_product"):
+                        equivalence_certification = await self.client.find_certification_for_product(
+                            "Equivalencia en Estados Unidos", identifier, self.locale
+                        )
+                    if equivalence_certification and equivalence_certification.get("id") is not None:
+                        validation_ids.append({"id": equivalence_certification["id"]})
+                    current_academic_validity["validations"] = validation_ids
                     academic_validity_payload = current_academic_validity
 
             student_profile_payload = None
@@ -929,7 +938,14 @@ class StrapiDescriptionRunner:
                         changes.append(plan_change("studentProfile", current_attributes.get("studentProfile"), student_profile_payload))
 
                 if update_attributes:
-                    await self.client.update_product(identifier, update_attributes)
+                    try:
+                        await self.client.update_product(identifier, update_attributes, locale=self.locale)
+                    except TypeError as error:
+                        # Compatibilidad con clientes de prueba o adaptadores
+                        # antiguos que aún no aceptan el locale explícito.
+                        if "locale" not in str(error):
+                            raise
+                        await self.client.update_product(identifier, update_attributes)
                 verification = {"ok": True, "fields": [], "tabs": []}
                 if hasattr(self.client, "get_product_sync_attributes"):
                     verified_attributes = await self.client.get_product_sync_attributes(identifier, self.locale)
