@@ -12,7 +12,7 @@ from ...services.logging_service import get_logger
 from ...services.google_drive_client import GoogleDriveClient, GoogleDriveClientError, google_document_id
 from ...services.strapi_client import StrapiAmbiguousError, StrapiClient, StrapiClientError, StrapiNotFoundError
 from .models import ProductResult, ProductRow, ProductSummary
-from .pdp_description import LaborFieldContent, extract_active_graduates_percentage, extract_content_description, extract_curriculum, extract_description, extract_graduate_testimonies, extract_labor_field_content, extract_program_explanation, extract_program_durations, extract_rvoe_numbers, extract_subjects
+from .pdp_description import LaborFieldContent, extract_active_graduates_percentage, extract_benefits, extract_content_description, extract_curriculum, extract_description, extract_graduate_testimonies, extract_labor_field_content, extract_program_explanation, extract_program_durations, extract_rvoe_numbers, extract_subjects
 from .common_questions import build_common_questions_payload, common_questions_match, extract_common_questions
 from .bullet_tabs import TAB_PREFIXES, build_bullet_tab_payload, extract_bullet_tabs, extract_study_modalities, has_desktop_cover_image, linked_tab_prefix
 from .fichas import FichasLookup
@@ -24,8 +24,8 @@ from .schema_validation import validate_product_payload
 EXPERIENCE_SUFFIX = {"Argentina": "Arg", "México": "", "Mexico": "", "Colombia": "Col", "Ecuador": "Ecu", "Perú": "Per", "Peru": "Per", "Chile": "Chile", "El Salvador": "SV", "Panamá": "Pan", "Panama": "Pan", "Bolivia": "Bol", "USA": "USA", "República Dominicana": "Dom", "Republica Dominicana": "Dom"}
 FIXED_BENEFITS = (
     ("UilAward", "Título con validez oficial SEP"),
-    ("UilBriefcaseAlt", "Especialidad única en México"),
-    ("UilGraduationCap", "Diseñada por especialistas del sector"),
+    ("UilBriefcaseAlt", "Preparación para el mundo laboral"),
+    ("UilGraduationCap", "Titulación directa"),
 )
 
 
@@ -171,23 +171,13 @@ def _program_article(program: str) -> str:
     return "el" if normalized_program.startswith(("doctorado", "master", "máster", "diplomado")) else "la"
 
 
-def build_benefits_payload(current: dict | None, program: str) -> dict:
-    """Build the same three official benefits for every product."""
+def build_benefits_payload(current: dict | None, program: str, benefit_texts: tuple[str, ...]) -> dict:
+    """Change only the requested benefit texts while preserving the rest."""
     payload = deepcopy(current or {})
-    title = deepcopy(payload.get("title") or {})
-    title["desktop"] = f"Beneficios de {_program_article(program)} {program}"
-    title["chakraConfig"] = {"color": "black"}
-    payload["title"] = title
-    current_items = payload.get("benefits") or []
-    items = []
-    for icon_name, text in FIXED_BENEFITS:
-        current_item = next((item for item in current_items if item.get("text") == text), {})
-        item = deepcopy(current_item)
-        icon = deepcopy(item.get("icon") or {})
-        icon["name"] = icon_name
-        item["icon"] = icon
-        item["text"] = text
-        items.append(item)
+    items = deepcopy(payload.get("benefits") or [])
+    for index, text in enumerate(benefit_texts):
+        if index < len(items):
+            items[index]["text"] = text
     payload["benefits"] = items
     return payload
 
@@ -318,6 +308,7 @@ class StrapiDescriptionRunner:
         siu_key: str | None = None
         try:
             source, content = await self._document_content(row.document or "")
+            benefit_texts = extract_benefits(source, content)
             bullet_source, bullet_content = source, content
             if row.ft_document:
                 bullet_source, bullet_content = await self._document_content(row.ft_document)
@@ -420,7 +411,9 @@ class StrapiDescriptionRunner:
                 )
             )
             if manages_bullet_tabs and hasattr(self.client, "get_product_tabs_bullet_section"):
-                bullet_tab_sections = extract_bullet_tabs(bullet_source, bullet_content)
+                # Bullet Tabs come exclusively from the PDP. The FT remains
+                # available for modalities, labor data, durations and graduates.
+                bullet_tab_sections = extract_bullet_tabs(source, content)
                 section = await self.client.get_product_tabs_bullet_section(identifier, self.locale)
                 tab_ids = []
                 for tab_prefix in TAB_PREFIXES:
@@ -438,6 +431,18 @@ class StrapiDescriptionRunner:
                     )
                     if existing_tab is None and hasattr(self.client, "find_localized_bullet_tab_by_strapi_name"):
                         existing_tab = await self.client.find_localized_bullet_tab_by_strapi_name(tab_name, self.locale)
+                    if tab_prefix not in bullet_tab_sections:
+                        # Employability is intentionally left untouched when
+                        # the PDP does not contain that section.
+                        if tab_prefix == "Empleabilidad" and existing_tab is not None:
+                            existing_payload = deepcopy(existing_tab.get("attributes", existing_tab))
+                            bullet_tab_operations.append((existing_tab, existing_payload, tab_name))
+                            tab_ids.append({"id": existing_tab["id"]})
+                            continue
+                        if tab_prefix == "Empleabilidad":
+                            tab_ids.append(None)
+                            continue
+                        raise ValueError(f"Falta la sección {tab_prefix!r} en el PDP {source}.")
                     template = None
                     if existing_tab is None or (
                         tab_prefix == "Perfil egreso" and not has_desktop_cover_image(existing_tab)
@@ -579,8 +584,8 @@ class StrapiDescriptionRunner:
             changes.extend(subject_changes)
 
             benefits_payload = None
-            if hasattr(self.client, "get_product_sync_attributes"):
-                benefits_payload = build_benefits_payload(current_attributes.get("benefits"), row.program)
+            if benefit_texts and hasattr(self.client, "get_product_sync_attributes"):
+                benefits_payload = build_benefits_payload(current_attributes.get("benefits"), row.program, benefit_texts)
                 if not payload_matches(current_attributes.get("benefits"), benefits_payload):
                     changes.append(plan_change("benefits", current_attributes.get("benefits"), benefits_payload))
 

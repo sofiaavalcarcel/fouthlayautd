@@ -87,6 +87,25 @@ def _read_docx_paragraphs(content: bytes) -> list[tuple[str, bool]]:
     return [(_clean(paragraph.text), _is_bullet(paragraph)) for paragraph in document.paragraphs]
 
 
+def _extract_profile_table_sections(document: Document) -> dict[str, BulletTabContent]:
+    """Extract ingreso/egreso from the PDP's Perfil del estudiante table."""
+    sections: dict[str, BulletTabContent] = {}
+    for table in document.tables:
+        if not table.rows or len(table.rows[0].cells) < 2:
+            continue
+        for cell in table.rows[0].cells:
+            paragraphs = [_clean(paragraph.text) for paragraph in cell.paragraphs if _clean(paragraph.text)]
+            if not paragraphs:
+                continue
+            prefix = _section_prefix(paragraphs[0])
+            if prefix not in {"Perfil ingreso", "Perfil egreso"}:
+                continue
+            bullets = tuple(paragraphs[1:])
+            if bullets:
+                sections[prefix] = BulletTabContent(prefix, paragraphs[0], bullets)
+    return sections
+
+
 def _read_pdf_paragraphs(content: bytes) -> list[tuple[str, bool]]:
     lines = [line.strip() for page in PdfReader(BytesIO(content)).pages for line in (page.extract_text() or "").splitlines()]
     return [(_clean(line), bool(re.match(r"^[•·▪◦\-*]\s*", line))) for line in lines if _clean(line)]
@@ -165,7 +184,18 @@ def extract_bullet_tabs(filename: str, content: bytes) -> dict[str, BulletTabCon
             raise ValueError(f"La sección {prefix!r} aparece más de una vez en {filename}.")
         sections[prefix] = BulletTabContent(prefix, "\n\n".join(intro), tuple(bullets))
 
+    if extension == ".docx":
+        document = Document(BytesIO(content))
+        # The PDP table is authoritative for these two profiles. Employment
+        # remains extracted from its existing section above.
+        sections.update(_extract_profile_table_sections(document))
+
     missing = [prefix for prefix in TAB_PREFIXES if prefix not in sections]
+    # Some current PDPs keep employability in Strapi without repeating its
+    # content in the PDP. The caller preserves that existing tab; ingreso and
+    # egreso remain mandatory because they are sourced from the PDP table.
+    if missing == ["Empleabilidad"]:
+        return sections
     if missing:
         raise ValueError(f"Faltan secciones de Bullet Tabs en {filename}: {', '.join(missing)}.")
     return sections

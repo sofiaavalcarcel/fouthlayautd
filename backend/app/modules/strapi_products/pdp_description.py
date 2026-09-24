@@ -7,6 +7,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from docx import Document
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from pypdf import PdfReader
 from dataclasses import dataclass
 
@@ -51,6 +53,65 @@ def _docx_text_blocks(document: Document) -> list[str]:
         for row in table.rows:
             blocks.extend(cell.text for cell in row.cells)
     return blocks
+
+
+def _docx_ordered_blocks(document: Document) -> list[str]:
+    """Read paragraph and table content in the document's visual order."""
+    blocks: list[str] = []
+    for child in document.element.body.iterchildren():
+        if child.tag.endswith("}p"):
+            blocks.append(Paragraph(child, document).text)
+        elif child.tag.endswith("}tbl"):
+            table = Table(child, document)
+            for row in table.rows:
+                for cell in row.cells:
+                    blocks.extend(paragraph.text for paragraph in cell.paragraphs)
+    return blocks
+
+
+def extract_benefits(filename: str, content: bytes) -> tuple[str, ...]:
+    """Extract benefit texts from the PDP's Beneficios de estudiar en Utel block."""
+    extension = Path(urlparse(filename).path or filename).suffix.casefold()
+    try:
+        if extension == ".docx":
+            blocks = _docx_ordered_blocks(Document(BytesIO(content)))
+        elif extension == ".pdf":
+            blocks = [
+                line
+                for page in PdfReader(BytesIO(content)).pages
+                for line in (page.extract_text() or "").splitlines()
+            ]
+        else:
+            raise ValueError(f"Formato de Documento PDP no soportado: {filename}.")
+    except ValueError:
+        raise
+    except Exception as error:
+        raise ValueError(f"No se pudo leer los beneficios de {filename}.") from error
+
+    marker = _normalize("Beneficios de estudiar en Utel")
+    values: list[str] = []
+    active = False
+    for block in blocks:
+        for raw_line in block.splitlines():
+            line = _clean(raw_line)
+            if not line:
+                continue
+            normalized = _normalize(line)
+            if marker in normalized:
+                active = True
+                continue
+            if not active:
+                continue
+            if re.match(r"^\(?\s*(?:web|coms|pdp|ft|padron|pendiente)\s*\)?\s*(?:bloque|banner|cintillo|documentos|pasos)", normalized):
+                active = False
+                break
+            if normalized in {"formulario", "header"}:
+                active = False
+                break
+            value = re.sub(r"^[•·▪◦\-–*]\s*", "", line).strip()
+            if value and _normalize(value) not in {_normalize(item) for item in values}:
+                values.append(value)
+    return tuple(values)
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ from backend.app.modules.strapi_products.bullet_tabs import (
 )
 from backend.app.modules.strapi_products.description_runner import StrapiDescriptionRunner
 from backend.app.modules.strapi_products.models import ProductRow
+from backend.app.modules.strapi_products.pdp_description import extract_benefits
 
 
 def _document() -> bytes:
@@ -42,6 +43,44 @@ def test_extract_bullet_tabs_separates_intro_from_bulleted_content():
     )
     assert tabs["Perfil egreso"].description == "Texto introductorio de egreso."
     assert tabs["Empleabilidad"].bullets == ("Consultoría: asesorar organizaciones.",)
+
+
+def test_extract_bullet_tabs_uses_profile_table_from_pdp():
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    for cell, title, bullets in (
+        (table.cell(0, 0), "Perfil de ingreso", ["Interés por el programa.", "Creatividad para aprender."]),
+        (table.cell(0, 1), "Perfil de egreso", ["Gestionarás proyectos.", "Medirás resultados."]),
+    ):
+        cell.paragraphs[0].text = title
+        for bullet in bullets:
+            cell.add_paragraph(bullet)
+    document.add_paragraph("Empleabilidad")
+    document.add_paragraph("Texto de empleabilidad.")
+    document.add_paragraph("Consultoría: asesorar organizaciones.", style="List Bullet")
+    output = io.BytesIO()
+    document.save(output)
+
+    tabs = extract_bullet_tabs("pdp.docx", output.getvalue())
+    assert tabs["Perfil ingreso"].bullets == ("Interés por el programa.", "Creatividad para aprender.")
+    assert tabs["Perfil egreso"].bullets == ("Gestionarás proyectos.", "Medirás resultados.")
+    assert tabs["Empleabilidad"].bullets == ("Consultoría: asesorar organizaciones.",)
+
+
+def test_extract_benefits_from_pdp_block():
+    document = Document()
+    document.add_paragraph("(Padrón) Bloque. Beneficios de estudiar en Utel")
+    document.add_paragraph("Título con validez oficial SEP")
+    document.add_paragraph("Preparación para el mundo laboral")
+    document.add_paragraph("Titulación directa")
+    document.add_paragraph("(Web) Bloque. Qué es el programa")
+    output = io.BytesIO()
+    document.save(output)
+    assert extract_benefits("pdp.docx", output.getvalue()) == (
+        "Título con validez oficial SEP",
+        "Preparación para el mundo laboral",
+        "Titulación directa",
+    )
 
 
 def test_build_existing_bullet_tab_changes_only_its_own_text_and_preserves_settings():
