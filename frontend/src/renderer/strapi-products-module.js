@@ -76,13 +76,14 @@ export function initializeStrapiProductsModule({ api, showToast }) {
   }).catch((error) => { status.textContent = error.message; });
 
   file.addEventListener("change", () => {
-    const match = file.files[0]?.name.match(/^\s*\[([A-Za-z]{2})\]/);
-    const countryValue = match ? FILE_COUNTRIES[match[1].toUpperCase()] : null;
+    const match = file.files[0]?.name.match(/^\s*(?:\[([A-Za-z]{2})\]|([A-Za-z]{2})(?=[-_ ]))/);
+    const code = match ? (match[1] || match[2]).toUpperCase() : null;
+    const countryValue = code ? FILE_COUNTRIES[code] : null;
     if (countryValue) {
       country.value = countryValue;
       status.textContent = `País detectado desde el archivo: ${country.options[country.selectedIndex]?.textContent || countryValue}.`;
     } else {
-      status.textContent = "El archivo debe comenzar con un código como [AR].";
+      status.textContent = "El archivo debe comenzar con un código como [AR] o MX-.";
     }
   });
 

@@ -6,7 +6,7 @@ import { leadsDeployApi } from "../services/leads-deploy-api.js";
 import { initializeBotModule } from "./bot-module.js?v=new-products-lead-destination-1";
 import { initializeLeadsDeployModule } from "./leads-deploy-module.js?v=leads-deploy-isolated-4";
 import { initializeWeeklyAutoModule } from "./weekly-auto-module.js";
-import { initializeStrapiProductsModule } from "./strapi-products-module.js?v=pdp-integrated-schema-2-progress-errors";
+import { initializeStrapiProductsModule } from "./strapi-products-module.js?v=pdp-integrated-schema-2-progress-errors-mx-filenames";
 import { initializeGooeyButtons } from "./gooey-buttons.js";
 import { initializeOptionWheel } from "./option-wheel.js";
 import { initializeLiquidButtons } from "./liquid-buttons.js";

@@ -10,7 +10,12 @@ from backend.app.modules.strapi_products.bullet_tabs import (
 )
 from backend.app.modules.strapi_products.description_runner import StrapiDescriptionRunner
 from backend.app.modules.strapi_products.models import ProductRow
-from backend.app.modules.strapi_products.pdp_description import extract_benefits
+from backend.app.modules.strapi_products.pdp_description import (
+    extract_benefits,
+    extract_graduate_testimonies,
+    extract_labor_field_content,
+    extract_pdp_market_description,
+)
 
 
 def _document() -> bytes:
@@ -62,9 +67,33 @@ def test_extract_bullet_tabs_uses_profile_table_from_pdp():
     document.save(output)
 
     tabs = extract_bullet_tabs("pdp.docx", output.getvalue())
+    assert tabs["Perfil ingreso"].description == ""
+    assert tabs["Perfil egreso"].description == ""
     assert tabs["Perfil ingreso"].bullets == ("Interés por el programa.", "Creatividad para aprender.")
     assert tabs["Perfil egreso"].bullets == ("Gestionarás proyectos.", "Medirás resultados.")
     assert tabs["Empleabilidad"].bullets == ("Consultoría: asesorar organizaciones.",)
+
+
+def test_build_profile_tab_without_description_removes_bullets_description():
+    existing = {
+        "id": 25,
+        "attributes": {
+            "strapiName": "Perfil ingreso Programa A",
+            "content": [{
+                "id": 12,
+                "__component": "section.bullets",
+                "bulletsDescription": {"desktop": "No debe conservarse"},
+                "bullets": [],
+            }],
+        },
+    }
+    payload = build_bullet_tab_payload(
+        "Programa A",
+        BulletTabContent("Perfil ingreso", "", ("Una viñeta del PDP.",)),
+        existing=existing,
+        locale="es-MX",
+    )
+    assert payload["content"][0]["bulletsDescription"] is None
 
 
 def test_extract_benefits_from_pdp_block():
@@ -81,6 +110,184 @@ def test_extract_benefits_from_pdp_block():
         "Preparación para el mundo laboral",
         "Titulación directa",
     )
+
+
+def test_extract_graduate_testimonies_from_coms_pdp_block_with_labeled_cards():
+    document = Document()
+    document.add_paragraph("(Coms) Bloque. Egresados de la Licenciatura en Psicología Organizacional")
+    table = document.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Me ayudó a crecer profesionalmente.\nAna López\nCarrera:\nEgresado"
+    output = io.BytesIO()
+    document.save(output)
+
+    assert extract_graduate_testimonies(
+        "pdp.docx", output.getvalue(), "Licenciatura en Psicología Organizacional"
+    ) == [("Ana López", "Me ayudó a crecer profesionalmente.")]
+
+
+def test_extract_graduate_testimonies_from_explicit_name_comment_labels():
+    document = Document()
+    document.add_paragraph("(Coms) Bloque. Egresados de la Licenciatura en Psicología Organizacional")
+    table = document.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Nombre: Ana López\nComentario: La modalidad me permitió estudiar y trabajar."
+    output = io.BytesIO()
+    document.save(output)
+
+    assert extract_graduate_testimonies(
+        "pdp.docx", output.getvalue(), "Licenciatura en Psicología Organizacional"
+    ) == [("Ana López", "La modalidad me permitió estudiar y trabajar.")]
+
+
+def test_extract_graduate_testimonies_from_pdp_cards_with_program_and_year():
+    document = Document()
+    document.add_paragraph("(Coms) Bloque. Egresados de la Licenciatura en Psicología Organizacional")
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = (
+        "Esta carrera me ayudó a crecer profesionalmente.\n"
+        "Ana López\n"
+        "Licenciatura en Psicología Organizacional\n"
+        "Egresada, 2024"
+    )
+    table.cell(0, 1).text = (
+        "La carrera me dio herramientas para mejorar mi trabajo.\n"
+        "Carlos Pérez\n"
+        "Licenciatura en Psicología Organizacional\n"
+        "Egresado, 2023"
+    )
+    output = io.BytesIO()
+    document.save(output)
+
+    assert extract_graduate_testimonies(
+        "pdp.docx", output.getvalue(), "Licenciatura en Psicología Organizacional"
+    ) == [
+        ("Ana López", "Esta carrera me ayudó a crecer profesionalmente."),
+        ("Carlos Pérez", "La carrera me dio herramientas para mejorar mi trabajo."),
+    ]
+
+
+def test_extract_active_graduates_percentage_from_banner_table():
+    document = Document()
+    document.add_paragraph("(Padron) Banner.")
+    table = document.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "90%\nEgresados activos en el mundo laboral"
+    output = io.BytesIO()
+    document.save(output)
+
+    from backend.app.modules.strapi_products.pdp_description import extract_active_graduates_percentage
+
+    assert extract_active_graduates_percentage("pdp.docx", output.getvalue()) == 90
+
+
+def test_extract_labor_field_sections_without_mixing_areas_positions_and_market():
+    document = Document()
+    document.add_paragraph("(Web) Bloque. Oportunidades Profesionales")
+    document.add_paragraph("Áreas en las que vas a poder trabajar")
+    document.add_paragraph("Sector público: diseñar políticas y coordinar proyectos.")
+    document.add_paragraph("Puestos que podrías ocupar")
+    document.add_paragraph("Analista de políticas públicas")
+    document.add_paragraph("Director de proyectos")
+    document.add_paragraph("Datos de mercado laboral")
+    document.add_paragraph("El campo laboral ofrece oportunidades en organizaciones públicas y privadas.")
+    output = io.BytesIO()
+    document.save(output)
+
+    extracted = extract_labor_field_content("pdp.docx", output.getvalue())
+
+    assert extracted.areas == (("Sector público", "diseñar políticas y coordinar proyectos."),)
+    assert extracted.positions == ("Analista de políticas públicas", "Director de proyectos")
+    assert extracted.market_description == "El campo laboral ofrece oportunidades en organizaciones públicas y privadas."
+
+
+def test_extract_labor_field_pairs_alternating_area_titles_and_descriptions():
+    document = Document()
+    document.add_paragraph("Áreas en las que vas a poder trabajar")
+    document.add_paragraph("Comunicación organizacional")
+    document.add_paragraph("Participa en estrategias de comunicación interna y externa.")
+    document.add_paragraph("Publicidad y marketing digital")
+    document.add_paragraph("Desarrolla campañas y contenidos para posicionar marcas.")
+    document.add_paragraph("Relaciones públicas")
+    document.add_paragraph("Gestiona vínculos entre organizaciones y sus audiencias.")
+    document.add_paragraph("Producción de contenidos y medios")
+    document.add_paragraph("Crea proyectos escritos, audiovisuales y multimedia.")
+    output = io.BytesIO()
+    document.save(output)
+
+    extracted = extract_labor_field_content("pdp.docx", output.getvalue())
+
+    assert extracted.areas == (
+        ("Comunicación organizacional", "Participa en estrategias de comunicación interna y externa."),
+        ("Publicidad y marketing digital", "Desarrolla campañas y contenidos para posicionar marcas."),
+        ("Relaciones públicas", "Gestiona vínculos entre organizaciones y sus audiencias."),
+        ("Producción de contenidos y medios", "Crea proyectos escritos, audiovisuales y multimedia."),
+    )
+
+
+def test_extract_pdp_market_description_uses_only_the_coms_block():
+    document = Document()
+    document.add_paragraph("(Web) Datos de mercado laboral")
+    document.add_paragraph("Texto de Web que no debe copiarse.")
+    document.add_paragraph("(Coms) Datos de mercado laboral")
+    document.add_paragraph("Texto exacto del PDP para el mercado laboral.")
+    document.add_paragraph("(Web) Bloque siguiente")
+    document.add_paragraph("Texto posterior que no debe copiarse.")
+    output = io.BytesIO()
+    document.save(output)
+
+    assert extract_pdp_market_description("pdp.docx", output.getvalue()) == (
+        "Texto exacto del PDP para el mercado laboral."
+    )
+
+
+def test_extract_pdp_market_description_stops_before_later_testimonials_table():
+    document = Document()
+    document.add_paragraph("(Coms) Datos de mercado laboral")
+    document.add_paragraph("Texto exacto del mercado laboral.")
+    table = document.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = (
+        "(Coms) Bloque. Egresados de Programa A\n"
+        "Un testimonio que no pertenece al mercado laboral.\n"
+        "Andrea Castillo\n"
+        "Egresada, 2024"
+    )
+    output = io.BytesIO()
+    document.save(output)
+
+    assert extract_pdp_market_description("pdp.docx", output.getvalue()) == (
+        "Texto exacto del mercado laboral."
+    )
+
+
+def test_extract_pdp_market_description_returns_empty_for_an_empty_coms_block():
+    document = Document()
+    document.add_paragraph("(Coms) Datos de mercado laboral")
+    document.add_paragraph("(Coms) Bloque. Egresados de Programa A")
+    output = io.BytesIO()
+    document.save(output)
+
+    assert extract_pdp_market_description("pdp.docx", output.getvalue()) == ""
+
+
+def test_resolve_active_graduates_percentage_defaults_to_90_without_banner_value():
+    document = Document()
+    output = io.BytesIO()
+    document.save(output)
+
+    from backend.app.modules.strapi_products.pdp_description import resolve_active_graduates_percentage
+
+    assert resolve_active_graduates_percentage("pdp.docx", output.getvalue()) == 90
+
+
+def test_resolve_active_graduates_percentage_keeps_pdp_value_when_present():
+    document = Document()
+    document.add_paragraph("(Padron) Banner.")
+    table = document.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "75%\nEgresados activos en el mundo laboral"
+    output = io.BytesIO()
+    document.save(output)
+
+    from backend.app.modules.strapi_products.pdp_description import resolve_active_graduates_percentage
+
+    assert resolve_active_graduates_percentage("pdp.docx", output.getvalue()) == 75
 
 
 def test_build_existing_bullet_tab_changes_only_its_own_text_and_preserves_settings():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 from typing import Any
 
 import httpx
@@ -19,6 +20,11 @@ def searchable_program_name(program: str) -> str:
     if remainder and remainder.casefold() != value.casefold():
         return remainder
     return value
+
+
+def _normalize_certification_text(value: str) -> str:
+    plain = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode()
+    return " ".join(re.sub(r"[^a-zA-Z0-9]+", " ", plain.casefold()).split())
 
 
 RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
@@ -179,6 +185,108 @@ class StrapiClient:
             )
         return entries[0] if entries else None
 
+    async def find_validation_for_program(
+        self,
+        title_prefix: str,
+        program: str,
+        product_id: int | str,
+        locale: str,
+    ) -> dict[str, Any] | None:
+        """Find the USA validation that belongs to the current product.
+
+        The PDP can expose this entry in two ways: as a certification already
+        related to the product, or as a validation in the global catalog whose
+        title names the product. Prefer the product relation because generic
+        entries such as ``Equivalencia en Estados Unidos`` do not necessarily
+        include the program name in their title. The catalog search remains as
+        a fallback, but it is also restricted to the current product.
+        """
+        normalized_prefix = _normalize_certification_text(title_prefix)
+        normalized_program = _normalize_certification_text(program)
+
+        # First inspect the product's own Certifications relation. This is
+        # the authoritative source when the PDP contains a generic USA
+        # equivalence title without repeating the program name.
+        related_entries: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            response = await self._request("GET", "/api/certifications", params={
+                "filters[title][$containsi]": title_prefix,
+                "filters[products][id][$eq]": product_id,
+                "locale": locale,
+                "pagination[page]": page,
+                "pagination[pageSize]": 100,
+                "populate[products][fields][0]": "id",
+            })
+            payload = response.json()
+            page_entries = payload.get("data", [])
+            related_entries.extend(page_entries)
+            pagination = ((payload.get("meta") or {}).get("pagination") or {})
+            page_count = pagination.get("pageCount")
+            if (page_count is not None and page >= page_count) or not page_entries or len(page_entries) < 100:
+                break
+            page += 1
+
+        related_matches = []
+        for entry in related_entries:
+            attributes = entry.get("attributes", entry)
+            candidate_title = str(attributes.get("title") or "")
+            normalized_title = _normalize_certification_text(candidate_title)
+            if normalized_prefix in normalized_title:
+                related_matches.append(entry)
+
+        if len(related_matches) > 1:
+            raise StrapiAmbiguousError(
+                f"Hay varias validaciones {title_prefix!r} relacionadas con el producto {program!r}."
+            )
+        if related_matches:
+            return related_matches[0]
+
+        entries: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            response = await self._request("GET", "/api/certifications", params={
+                "filters[type][$eq]": "validation",
+                "filters[products][id][$eq]": product_id,
+                "locale": locale,
+                "pagination[page]": page,
+                "pagination[pageSize]": 100,
+                "populate[products][fields][0]": "id",
+            })
+            payload = response.json()
+            page_entries = payload.get("data", [])
+            entries.extend(page_entries)
+            pagination = ((payload.get("meta") or {}).get("pagination") or {})
+            page_count = pagination.get("pageCount")
+            if (page_count is not None and page >= page_count) or not page_entries or len(page_entries) < 100:
+                break
+            page += 1
+
+        matches: list[dict[str, Any]] = []
+        for entry in entries:
+            attributes = entry.get("attributes", entry)
+            candidate_title = str(attributes.get("title") or "")
+            normalized_title = _normalize_certification_text(candidate_title)
+            if normalized_prefix not in normalized_title or normalized_program not in normalized_title:
+                continue
+            products = attributes.get("products") or {}
+            if isinstance(products, dict):
+                products = products.get("data") or products.get("items") or []
+            product_ids = {
+                str(item.get("id"))
+                for item in products
+                if isinstance(item, dict) and item.get("id") is not None
+            }
+            if str(product_id) not in product_ids:
+                continue
+            matches.append(entry)
+
+        if len(matches) > 1:
+            raise StrapiAmbiguousError(
+                f"Hay varias validaciones {title_prefix!r} para el programa {program!r}."
+            )
+        return matches[0] if matches else None
+
     async def update_certification(self, identifier: int | str, attributes: dict[str, Any]) -> dict[str, Any]:
         response = await self._request("PUT", f"/api/certifications/{identifier}", json={"data": attributes})
         return response.json().get("data", {})
@@ -330,6 +438,7 @@ class StrapiClient:
         response = await self._request("GET", f"/api/bullet-tabs/{identifier}", params={
             "status": "draft",
             "populate[content][on][section.bullets][populate][bullets][populate]": "*",
+            "populate[content][on][section.bullets][populate][bulletsDescription]": "*",
             "populate[content][on][section.bullets][populate][coverImage][populate][desktop][populate]": "*",
             "populate[title]": "*",
         })
@@ -342,6 +451,7 @@ class StrapiClient:
             "locale": locale,
             "pagination[pageSize]": 10,
             "populate[content][on][section.bullets][populate][bullets][populate]": "*",
+            "populate[content][on][section.bullets][populate][bulletsDescription]": "*",
             "populate[content][on][section.bullets][populate][coverImage][populate][desktop][populate]": "*",
             "populate[title]": "*",
         })

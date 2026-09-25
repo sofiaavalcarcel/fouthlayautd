@@ -12,7 +12,7 @@ from ...services.logging_service import get_logger
 from ...services.google_drive_client import GoogleDriveClient, GoogleDriveClientError, google_document_id
 from ...services.strapi_client import StrapiAmbiguousError, StrapiClient, StrapiClientError, StrapiNotFoundError
 from .models import ProductResult, ProductRow, ProductSummary
-from .pdp_description import LaborFieldContent, extract_active_graduates_percentage, extract_benefits, extract_content_description, extract_curriculum, extract_description, extract_graduate_testimonies, extract_labor_field_content, extract_program_explanation, extract_program_durations, extract_rvoe_numbers, extract_subjects
+from .pdp_description import LaborFieldContent, extract_benefits, extract_content_description, extract_curriculum, extract_description, extract_graduate_testimonies, extract_labor_field_content, extract_pdp_market_description, extract_program_explanation, extract_program_durations, extract_rvoe_numbers, extract_subjects, resolve_active_graduates_percentage
 from .common_questions import build_common_questions_payload, common_questions_match, extract_common_questions
 from .bullet_tabs import TAB_PREFIXES, build_bullet_tab_payload, extract_bullet_tabs, extract_study_modalities, has_desktop_cover_image, linked_tab_prefix
 from .fichas import FichasLookup
@@ -172,12 +172,33 @@ def _program_article(program: str) -> str:
 
 
 def build_benefits_payload(current: dict | None, program: str, benefit_texts: tuple[str, ...]) -> dict:
-    """Change only the requested benefit texts while preserving the rest."""
+    """Build the three standard benefits, preserving existing component data."""
     payload = deepcopy(current or {})
-    items = deepcopy(payload.get("benefits") or [])
-    for index, text in enumerate(benefit_texts):
-        if index < len(items):
-            items[index]["text"] = text
+    title = deepcopy(payload.get("title") or {})
+    title["desktop"] = f"Beneficios de {_program_article(program)} {program}"
+    title["chakraConfig"] = {"color": "black"}
+    payload["title"] = title
+
+    current_items = payload.get("benefits") or []
+    if isinstance(current_items, dict):
+        current_items = current_items.get("data") or current_items.get("items") or []
+    current_items = current_items if isinstance(current_items, list) else []
+    # Strapi's atomic.icon enum uses "Briefcase" with a lowercase "c".
+    fixed_icons = ("UilAward", "UilBriefcaseAlt", "UilGraduationCap")
+    fixed_texts = (
+        "Título con validez oficial SEP",
+        "Preparación para el mundo laboral",
+        "Titulación directa",
+    )
+    source_texts = tuple(benefit_texts) or fixed_texts
+    items = []
+    for index, icon_name in enumerate(fixed_icons):
+        item = deepcopy(current_items[index]) if index < len(current_items) and isinstance(current_items[index], dict) else {}
+        icon = deepcopy(item.get("icon") or {})
+        icon["name"] = icon_name
+        item["icon"] = icon
+        item["text"] = source_texts[index] if index < len(source_texts) else fixed_texts[index]
+        items.append(item)
     payload["benefits"] = items
     return payload
 
@@ -316,7 +337,7 @@ class StrapiDescriptionRunner:
             labor_sources = [(source, content)]
             if bullet_source != source or bullet_content != content:
                 labor_sources.append((bullet_source, bullet_content))
-            active_graduates_percentage = extract_active_graduates_percentage(source, content)
+            active_graduates_percentage = resolve_active_graduates_percentage(source, content)
             labor_contents: list[LaborFieldContent] = []
             for labor_source, labor_content in labor_sources:
                 try:
@@ -324,6 +345,17 @@ class StrapiDescriptionRunner:
                 except ValueError:
                     continue
             labor_field_content = merge_labor_field_content(labor_contents)
+            # marketDescription comes exclusively from the PDP's Coms block;
+            # FT or Web content must never be copied into this field.
+            try:
+                pdp_market_description = extract_pdp_market_description(source, content)
+            except ValueError:
+                pdp_market_description = None
+            labor_field_content = LaborFieldContent(
+                labor_field_content.areas,
+                labor_field_content.positions,
+                pdp_market_description or "",
+            )
             rvoe_numbers: list[str] = []
             for validity_source, validity_content in labor_sources:
                 for number in extract_rvoe_numbers(validity_source, validity_content):
@@ -331,11 +363,13 @@ class StrapiDescriptionRunner:
                         rvoe_numbers.append(number)
             graduate_testimonies: list[tuple[str, str]] = []
             seen_graduates: set[str] = set()
-            for graduate_source, graduate_content in labor_sources:
-                for name, comment in extract_graduate_testimonies(graduate_source, graduate_content, row.program):
-                    if name.casefold() not in seen_graduates:
-                        seen_graduates.add(name.casefold())
-                        graduate_testimonies.append((name, comment))
+            # Graduates are sourced only from the PDP's
+            # "(Coms) Bloque. Egresados de ..." section. The FT is not a
+            # source for these testimonials.
+            for name, comment in extract_graduate_testimonies(source, content, row.program):
+                if name.casefold() not in seen_graduates:
+                    seen_graduates.add(name.casefold())
+                    graduate_testimonies.append((name, comment))
             description = extract_description(row.program, source, content)
             try:
                 program_explanation = extract_program_explanation(row.program, source, content)
@@ -373,14 +407,30 @@ class StrapiDescriptionRunner:
                 # inventing a second duration.
                 durations = []
                 programs_error = str(error)
-            ficha_url = self.fichas_lookup.find(row.program, self.country) if self.fichas_lookup else None
+            ficha_url: str | None = None
+            ficha_warning: str | None = None
+            if self.fichas_lookup:
+                try:
+                    ficha_url = self.fichas_lookup.find(row.program, self.country)
+                except KeyError as error:
+                    # La ficha es opcional. Si el archivo cargado no contiene
+                    # este programa, se conserva el valor actual y se continúa
+                    # con todas las demás secciones del PDP.
+                    ficha_warning = str(error)
             product = await self.client.find_product(row.program, self.locale, title_field=self.title_field, seo_field="seo", status=self.status)
             identifier = product.get("id") or product.get("documentId")
             if identifier is None:
                 raise ValueError("El producto no tiene id ni documentId.")
             common_questions_payload = None
             faq_matches = None
-            faq_entries = extract_common_questions(source, content)
+            faq_warning: str | None = None
+            try:
+                faq_entries = extract_common_questions(source, content)
+            except ValueError as error:
+                # Una pregunta frecuente incompleta no debe impedir que se
+                # sincronicen las demás secciones válidas del mismo producto.
+                faq_entries = None
+                faq_warning = str(error)
             if faq_entries is not None and hasattr(self.client, "get_product_common_questions"):
                 current_faq = await self.client.get_product_common_questions(identifier, self.locale)
                 faq_matches = common_questions_match(faq_entries, current_faq)
@@ -432,17 +482,15 @@ class StrapiDescriptionRunner:
                     if existing_tab is None and hasattr(self.client, "find_localized_bullet_tab_by_strapi_name"):
                         existing_tab = await self.client.find_localized_bullet_tab_by_strapi_name(tab_name, self.locale)
                     if tab_prefix not in bullet_tab_sections:
-                        # Employability is intentionally left untouched when
-                        # the PDP does not contain that section.
-                        if tab_prefix == "Empleabilidad" and existing_tab is not None:
+                        # Any tab without content in the PDP is intentionally
+                        # left untouched. Never create or overwrite blanks.
+                        if existing_tab is not None:
                             existing_payload = deepcopy(existing_tab.get("attributes", existing_tab))
                             bullet_tab_operations.append((existing_tab, existing_payload, tab_name))
                             tab_ids.append({"id": existing_tab["id"]})
                             continue
-                        if tab_prefix == "Empleabilidad":
-                            tab_ids.append(None)
-                            continue
-                        raise ValueError(f"Falta la sección {tab_prefix!r} en el PDP {source}.")
+                        tab_ids.append(None)
+                        continue
                     template = None
                     if existing_tab is None or (
                         tab_prefix == "Perfil egreso" and not has_desktop_cover_image(existing_tab)
@@ -500,7 +548,7 @@ class StrapiDescriptionRunner:
                     component["descriptionDesktopMobile"] = desktop_mobile
                     programs_payload.append(component)
             download_payload = None
-            if self.fichas_lookup:
+            if self.fichas_lookup and ficha_url:
                 current_download = await self.client.get_product_download_program(identifier)
                 download_payload = dict(current_download or {})
                 download_payload["url"] = ficha_url
@@ -649,7 +697,11 @@ class StrapiDescriptionRunner:
                     )
                     validation_ids = ([{"id": specific_validation_id}] if specific_validation_id is not None else [])
                     equivalence_certification = None
-                    if hasattr(self.client, "find_certification_for_product"):
+                    if hasattr(self.client, "find_validation_for_program"):
+                        equivalence_certification = await self.client.find_validation_for_program(
+                            "Equivalencia en Estados Unidos", row.program, identifier, self.locale
+                        )
+                    elif hasattr(self.client, "find_certification_for_product"):
                         equivalence_certification = await self.client.find_certification_for_product(
                             "Equivalencia en Estados Unidos", identifier, self.locale
                         )
@@ -718,7 +770,7 @@ class StrapiDescriptionRunner:
                 program_explanation_payload["coverImageSectionConfig"] = section
 
             labor_field_payload = None
-            if labor_field_content.areas or labor_field_content.positions or labor_field_content.market_description:
+            if labor_field_content.areas or labor_field_content.positions or labor_field_content.market_description or pdp_market_description is not None:
                 if not hasattr(self.client, "find_upload_file_by_name"):
                     raise StrapiNotFoundError("El cliente de Strapi no permite buscar OportunidadesProfesionales.png.")
                 labor_image = await self.client.find_upload_file_by_name("OportunidadesProfesionales.png")
@@ -744,9 +796,9 @@ class StrapiDescriptionRunner:
                 labor_field_payload["marketTitle"] = responsive_text(
                     labor_field_payload.get("marketTitle"), "Datos del mercado laboral"
                 )
-                if labor_field_content.market_description:
+                if pdp_market_description is not None:
                     labor_field_payload["marketDescription"] = responsive_text(
-                        labor_field_payload.get("marketDescription"), labor_field_content.market_description
+                        labor_field_payload.get("marketDescription"), pdp_market_description
                     )
 
                 image = deepcopy(labor_field_payload.get("image") or {})
@@ -1034,6 +1086,15 @@ class StrapiDescriptionRunner:
                         f"; Preguntas frecuentes sincronizadas desde el documento ({len(faq_entries)} preguntas)"
                     )
                 )
+            if faq_warning:
+                message += f"; Preguntas frecuentes no actualizadas: {faq_warning}"
+            if ficha_warning:
+                message += f"; Ficha no actualizada: {ficha_warning}"
+            if graduate_testimonies:
+                message += f"; Testimonios de egresados extraídos del PDP: {len(graduate_testimonies)}"
+            else:
+                message += "; No se encontraron testimonios de egresados en el PDP"
+            message += f"; activeGraduatesPercentaje sincronizado: {active_graduates_percentage}%"
             if self.siu_key_lookup is None:
                 message += "; siuKey no consultada: el lookup del Balanceador no está configurado"
             if self.dry_run:
@@ -1056,9 +1117,37 @@ class StrapiDescriptionRunner:
             return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), changes=changes, verification=verification)
         except BalancerCatalogError as error:
             return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification)
+        except Exception as error:  # noqa: BLE001
+            # Cada producto debe ser independiente. Un fallo inesperado en un
+            # paso de este producto no puede detener el lote seleccionado.
+            self.logger.exception(
+                "Unexpected error while processing PDP row=%s program=%s",
+                row.row_number,
+                row.program,
+            )
+            return ProductResult(
+                row.sheet,
+                row.row_number,
+                row.program,
+                self.country,
+                "FAILED",
+                message=(
+                    "Ocurrió un error inesperado al procesar este producto. "
+                    f"Detalle técnico: {error}"
+                ),
+                description=description,
+                siu_key=siu_key,
+                banner_key=siu_key,
+                changes=changes,
+                verification=verification,
+            )
 
     async def run(self, rows: list[ProductRow]) -> tuple[list[ProductResult], ProductSummary]:
-        results = [await self.process(row) for row in rows]
+        # Mantener el orden del Excel, pero garantizar que todos los productos
+        # del alcance se intenten aunque uno falle.
+        results = []
+        for row in rows:
+            results.append(await self.process(row))
         counts = Counter(result.status for result in results)
         return results, ProductSummary(
             total=len(results), updated=counts["UPDATED"], dry_run=counts["DRY_RUN"], skipped=counts["SKIPPED"],

@@ -102,7 +102,9 @@ def _extract_profile_table_sections(document: Document) -> dict[str, BulletTabCo
                 continue
             bullets = tuple(paragraphs[1:])
             if bullets:
-                sections[prefix] = BulletTabContent(prefix, paragraphs[0], bullets)
+                # The table heading identifies the profile; it is not an
+                # introductory description for bulletsDescription.
+                sections[prefix] = BulletTabContent(prefix, "", bullets)
     return sections
 
 
@@ -190,14 +192,8 @@ def extract_bullet_tabs(filename: str, content: bytes) -> dict[str, BulletTabCon
         # remains extracted from its existing section above.
         sections.update(_extract_profile_table_sections(document))
 
-    missing = [prefix for prefix in TAB_PREFIXES if prefix not in sections]
-    # Some current PDPs keep employability in Strapi without repeating its
-    # content in the PDP. The caller preserves that existing tab; ingreso and
-    # egreso remain mandatory because they are sourced from the PDP table.
-    if missing == ["Empleabilidad"]:
-        return sections
-    if missing:
-        raise ValueError(f"Faltan secciones de Bullet Tabs en {filename}: {', '.join(missing)}.")
+    # Missing sections are intentionally returned empty. The caller preserves
+    # the existing Strapi tab and does not create or overwrite blank content.
     return sections
 
 
@@ -232,7 +228,12 @@ def _bullets_component(entry: dict, template: dict | None, section: BulletTabCon
     )
     _copy_cover_image(component, template_component, creating=creating)
     component["__component"] = "section.bullets"
-    component["bulletsDescription"] = _desktop_value(component.get("bulletsDescription"), section.description)
+    if section.description:
+        component["bulletsDescription"] = _desktop_value(component.get("bulletsDescription"), section.description)
+    else:
+        # Explicit null clears an existing Strapi component instead of
+        # allowing an omitted field to survive the update.
+        component["bulletsDescription"] = None
     component["bullets"] = [
         {
             "title": None,

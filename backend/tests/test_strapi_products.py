@@ -8,7 +8,7 @@ from docx import Document
 
 from backend.app.modules.strapi_products.canonical import add_country_to_canonical
 from backend.app.modules.strapi_products.country import detect_country_from_filename
-from backend.app.modules.strapi_products.description_runner import StrapiDescriptionRunner
+from backend.app.modules.strapi_products.description_runner import StrapiDescriptionRunner, build_benefits_payload
 from backend.app.modules.strapi_products.pdp_description import extract_content_description, extract_description, extract_program_durations
 from backend.app.modules.strapi_products.models import ProductRow
 from backend.app.modules.strapi_products.runner import StrapiProductRunner
@@ -132,6 +132,90 @@ def test_description_runner_writes_three_program_options(tmp_path):
     ]
 
 
+def test_description_runner_persists_positions_and_areas_for_each_product(tmp_path):
+    document = Document()
+    document.add_paragraph("Programa A", style="Title")
+    document.add_paragraph("Descripción PDP original.")
+    document.add_paragraph("Asignaturas")
+    document.add_paragraph("¿Qué materias se estudian?")
+    document.add_paragraph("El programa desarrolla las competencias del área.")
+    document.add_paragraph("1° cuatrimestre")
+    document.add_paragraph("Introducción a la administración pública")
+    document.add_paragraph("(Web) Bloque. Oportunidades Profesionales")
+    document.add_paragraph("Áreas en las que vas a poder trabajar")
+    document.add_paragraph("Sector público: coordinar programas y políticas.")
+    document.add_paragraph("Puestos que podrías ocupar")
+    document.add_paragraph("Analista de políticas públicas")
+    document.add_paragraph("Datos de mercado laboral")
+    document.add_paragraph("Texto de Web que no debe guardarse en marketDescription.")
+    document.add_paragraph("(Coms) Datos de mercado laboral")
+    document.add_paragraph("Texto exacto del PDP para marketDescription.")
+    output = io.BytesIO(); document.save(output)
+    source = tmp_path / "programa-a.docx"
+    source.write_bytes(output.getvalue())
+    updates = []
+
+    class FakeClient:
+        async def find_product(self, *args, **kwargs):
+            return {
+                "id": 12,
+                "attributes": {
+                    "title": "Programa A",
+                    "laborField": {
+                        "positionsTags": [{"text": "Anterior"}],
+                        "areasToWorkItems": [],
+                    },
+                },
+            }
+
+        async def find_upload_file_by_name(self, name):
+            return {"id": 99, "name": name}
+
+        async def update_product(self, identifier, attributes, **kwargs):
+            updates.append((identifier, attributes))
+
+    results, summary = asyncio.run(
+        StrapiDescriptionRunner(FakeClient(), "México", "es-MX", dry_run=False).run(
+            [ProductRow("Sheet", 2, "Programa A", str(source))]
+        )
+    )
+
+    assert results[0].status == "UPDATED"
+    assert summary.updated == 1
+    labor_field = updates[0][1]["laborField"]
+    assert labor_field["positionsTags"] == [{"text": "Analista de políticas públicas"}]
+    assert labor_field["areasToWorkItems"][0]["title"] == "Sector público"
+    assert labor_field["areasToWorkItems"][0]["description"] == "coordinar programas y políticas."
+    assert labor_field["areasToWorkItems"][0]["icon"]["name"] == "UilCheckSquare"
+    assert labor_field["marketDescription"]["desktop"] == "Texto exacto del PDP para marketDescription."
+
+
+def test_build_benefits_payload_creates_missing_standard_items():
+    payload = build_benefits_payload(
+        {"title": {"mobile": "old"}, "benefits": []},
+        "Licenciatura en Psicología Organizacional",
+        (
+            "Título con validez oficial SEP",
+            "Preparación para el mundo laboral",
+            "Titulación directa",
+        ),
+    )
+
+    assert payload["title"] == {
+        "mobile": "old",
+        "desktop": "Beneficios de la Licenciatura en Psicología Organizacional",
+        "chakraConfig": {"color": "black"},
+    }
+    assert [item["icon"]["name"] for item in payload["benefits"]] == [
+        "UilAward", "UilBriefcaseAlt", "UilGraduationCap"
+    ]
+    assert [item["text"] for item in payload["benefits"]] == [
+        "Título con validez oficial SEP",
+        "Preparación para el mundo laboral",
+        "Titulación directa",
+    ]
+
+
 def test_description_runner_updates_descriptions_and_default_layout(tmp_path):
     document = Document()
     document.add_paragraph("Programa A", style="Title")
@@ -155,7 +239,7 @@ def test_description_runner_updates_descriptions_and_default_layout(tmp_path):
     results, summary = asyncio.run(StrapiDescriptionRunner(FakeClient(), "Argentina", "es-AR", dry_run=False).run([ProductRow("Sheet", 2, "Programa A", str(source))]))
     assert results[0].status == "UPDATED"
     assert summary.updated == 1
-    assert calls == [((12, {"shortDescription": "Descripcion PDP original.", "longDescription": "Descripcion PDP original.", "contentDescription": "¿Qué materias se estudian?\n\nContenido de asignaturas.", "customLayoutPDP": "fourthLayout", "enableExtraButtons": True, "enableForm": True}), {"locale": "es-AR"})]
+    assert calls == [((12, {"shortDescription": "Descripcion PDP original.", "longDescription": "Descripcion PDP original.", "contentDescription": "¿Qué materias se estudian?\n\nContenido de asignaturas.", "customLayoutPDP": "fourthLayout", "enableExtraButtons": True, "enableForm": True, "activeGraduatesPercentaje": 90}), {"locale": "es-AR"})]
 
 
 def test_description_runner_sets_third_layout_and_product_specific_tabs(tmp_path):
@@ -420,6 +504,107 @@ def test_client_update_product_descriptions_sends_only_description_fields():
             assert requests[0].method == "PUT"
             assert requests[0].url.path.endswith("/api/products/1571")
             assert requests[0].read() == b'{"data":{"shortDescription":"Texto corto","longDescription":"Texto largo"}}'
+        finally:
+            await http_client.aclose()
+
+    asyncio.run(run())
+
+
+def test_client_finds_program_specific_usa_validation_across_validation_catalog():
+    requests = []
+
+    async def handler(request):
+        requests.append(dict(request.url.params))
+        if "filters[type][$eq]" not in request.url.params:
+            return httpx.Response(200, request=request, json={
+                "data": [],
+                "meta": {"pagination": {"page": 1, "pageCount": 1}},
+            })
+        return httpx.Response(200, request=request, json={
+            "data": [
+                {"id": 20, "attributes": {"title": "Equivalencia en Estados Unidos Licenciatura en Otro programa", "products": {"data": [{"id": 999}]}}},
+                {"id": 21, "attributes": {"title": "Equivalencia en Estados Unidos Licenciatura en Programa A", "products": {"data": [{"id": 77}]}}},
+            ],
+            "meta": {"pagination": {"page": 1, "pageCount": 1}},
+        })
+
+    async def run():
+        http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://example.test")
+        client = StrapiClient("https://example.test", "secret", client=http_client)
+        try:
+            result = await client.find_validation_for_program(
+                "Equivalencia en Estados Unidos", "Licenciatura en Programa A", 77, "es-MX"
+            )
+            assert result["id"] == 21
+            assert requests[0]["filters[products][id][$eq]"] == "77"
+            assert requests[1]["filters[type][$eq]"] == "validation"
+            assert requests[1]["filters[products][id][$eq]"] == "77"
+            assert "filters[title][$eq]" not in requests[1]
+        finally:
+            await http_client.aclose()
+
+    asyncio.run(run())
+
+
+def test_client_prefers_usa_certification_already_related_to_product():
+    requests = []
+
+    async def handler(request):
+        requests.append(dict(request.url.params))
+        if "filters[products][id][$eq]" in request.url.params:
+            return httpx.Response(200, request=request, json={
+                "data": [{
+                    "id": 33,
+                    "attributes": {
+                        "title": "Equivalencia en Estados Unidos",
+                        "products": {"data": [{"id": 77}]},
+                    },
+                }],
+                "meta": {"pagination": {"page": 1, "pageCount": 1}},
+            })
+        raise AssertionError("The global catalog should not be queried when the product certification exists")
+
+    async def run():
+        http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://example.test")
+        client = StrapiClient("https://example.test", "secret", client=http_client)
+        try:
+            result = await client.find_validation_for_program(
+                "Equivalencia en Estados Unidos", "Licenciatura en Programa A", 77, "es-MX"
+            )
+            assert result["id"] == 33
+            assert requests[0]["filters[products][id][$eq]"] == "77"
+        finally:
+            await http_client.aclose()
+
+    asyncio.run(run())
+
+
+def test_client_does_not_use_usa_validation_related_to_another_product():
+    async def handler(request):
+        if "filters[products][id][$eq]" in request.url.params:
+            return httpx.Response(200, request=request, json={
+                "data": [],
+                "meta": {"pagination": {"page": 1, "pageCount": 1}},
+            })
+        return httpx.Response(200, request=request, json={
+            "data": [{
+                "id": 21,
+                "attributes": {
+                    "title": "Equivalencia en Estados Unidos Licenciatura en Programa A",
+                    "products": {"data": [{"id": 999}]},
+                },
+            }],
+            "meta": {"pagination": {"page": 1, "pageCount": 1}},
+        })
+
+    async def run():
+        http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://example.test")
+        client = StrapiClient("https://example.test", "secret", client=http_client)
+        try:
+            result = await client.find_validation_for_program(
+                "Equivalencia en Estados Unidos", "Licenciatura en Programa A", 77, "es-MX"
+            )
+            assert result is None
         finally:
             await http_client.aclose()
 
