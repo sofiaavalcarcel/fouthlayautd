@@ -113,6 +113,7 @@ export const api = {
     return request("/api/strapi/products/run", { method: "POST", body: formData });
   },
   strapiProductStatus: (jobId) => request(`/api/strapi/products/jobs/${jobId}`),
+  retryStrapiProductJob: (jobId) => request(`/api/strapi/products/jobs/${jobId}/retry`, { method: "POST" }),
   createStrapiCombinedReport: (canonicalJobId, pdpJobId) => {
     const formData = new FormData();
     formData.append("canonical_job_id", canonicalJobId);

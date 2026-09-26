@@ -222,6 +222,20 @@ def test_extract_labor_field_pairs_alternating_area_titles_and_descriptions():
     )
 
 
+def test_extract_labor_field_warns_when_area_description_is_ambiguous():
+    document = Document()
+    document.add_paragraph("Áreas en las que vas a poder trabajar")
+    document.add_paragraph("Sector público")
+    document.add_paragraph("Breve")
+    output = io.BytesIO()
+    document.save(output)
+
+    extracted = extract_labor_field_content("pdp.docx", output.getvalue())
+
+    assert extracted.areas == (("Sector público", ""), ("Breve", ""))
+    assert extracted.warnings
+
+
 def test_extract_pdp_market_description_uses_only_the_coms_block():
     document = Document()
     document.add_paragraph("(Web) Datos de mercado laboral")

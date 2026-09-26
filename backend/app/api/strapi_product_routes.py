@@ -17,7 +17,7 @@ from ..modules.strapi_products.report import build_combined_report, build_descri
 from ..modules.strapi_products.country import COUNTRIES, detect_country_from_filename
 from ..modules.strapi_products.schema_validation import product_schema_version
 from ..modules.strapi_products.runner import StrapiProductRunner
-from ..modules.strapi_products.spreadsheet import read_product_rows, select_product_rows
+from ..modules.strapi_products.spreadsheet import read_product_rows, select_product_rows, select_product_rows_by_keys
 from ..services.strapi_client import StrapiClient
 from ..services.google_drive_client import GoogleDriveClient
 
@@ -43,6 +43,13 @@ def _countries(settings: Settings) -> dict[str, dict[str, str]]:
 def _token(settings: Settings) -> str:
     value = settings.strapi_token
     return value.get_secret_value() if hasattr(value, "get_secret_value") else str(value)
+
+
+def _humanize_general_error(error: Exception) -> str:
+    message = str(error)
+    if "cannot access local variable" in message.casefold():
+        return "No se pudo leer la información actual del producto. Detalle técnico: " + message
+    return message
 
 
 def _validate_product_scope(product_scope: str) -> str:
@@ -89,7 +96,7 @@ async def run_strapi_product_job(request: Request, file: UploadFile = File(...),
     job_id = uuid4().hex
     request.app.state.strapi_product_jobs[job_id] = {
         "job_id": job_id, "status": "RUNNING", "country": detected.label, "country_code": detected.code, "locale": detected.locale, "dry_run": dry_run.casefold() == "true",
-        "filename": file.filename, "product_scope": product_scope, "started_at": datetime.now(timezone.utc).isoformat(), "completed": 0,
+        "filename": file.filename, "product_scope": product_scope, "started_at": datetime.now(timezone.utc).isoformat(), "completed": 0, "general_errors": [],
     }
     request.app.state.bot_tasks[job_id] = asyncio.create_task(_run_job(request.app, job_id, content, file.filename or "resultado.xlsx", country_config, product_scope))
     return request.app.state.strapi_product_jobs[job_id]
@@ -117,7 +124,16 @@ async def run_strapi_description_job(request: Request, file: UploadFile = File(.
     fichas_content = await fichas_file.read() if fichas_file else None
     request.app.state.strapi_product_jobs[job_id] = {
         "job_id": job_id, "operation": "descriptions", "status": "RUNNING", "country": detected.label, "country_code": detected.code, "locale": detected.locale,
-        "dry_run": dry_run.casefold() == "true", "filename": file.filename, "product_scope": product_scope, "schema_version": product_schema_version(), "schema_source": "integrado", "started_at": datetime.now(timezone.utc).isoformat(), "completed": 0,
+        "dry_run": dry_run.casefold() == "true", "filename": file.filename, "product_scope": product_scope, "schema_version": product_schema_version(), "schema_source": "integrado", "started_at": datetime.now(timezone.utc).isoformat(), "completed": 0, "general_errors": [],
+    }
+    # Keep uploaded bytes server-side so the UI can retry only failed rows
+    # without asking the user to select the source files again.
+    request.app.state.strapi_product_inputs[job_id] = {
+        "content": content,
+        "fichas_content": fichas_content,
+        "filename": file.filename or "resultado.xlsx",
+        "country_config": detected,
+        "dry_run": dry_run.casefold() == "true",
     }
     request.app.state.bot_tasks[job_id] = asyncio.create_task(_run_description_job(request.app, job_id, content, file.filename or "resultado.xlsx", detected, fichas_content, product_scope))
     return request.app.state.strapi_product_jobs[job_id]
@@ -129,6 +145,67 @@ async def strapi_product_job_status(request: Request, job_id: str) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="Job no encontrado.")
     return job
+
+
+@router.post("/jobs/{job_id}/retry", status_code=202)
+async def retry_strapi_product_job(request: Request, job_id: str) -> dict:
+    """Retry only products with a real product-level failure."""
+    jobs = request.app.state.strapi_product_jobs
+    previous = jobs.get(job_id)
+    if not previous or previous.get("operation") != "descriptions":
+        raise HTTPException(status_code=404, detail="No se encontró una ejecución PDP reintentable.")
+    if previous.get("status") == "RUNNING":
+        raise HTTPException(status_code=409, detail="La ejecución todavía está en curso.")
+    input_data = request.app.state.strapi_product_inputs.get(job_id)
+    if not input_data:
+        raise HTTPException(status_code=409, detail="Los archivos de la ejecución anterior ya no están disponibles para reintentar.")
+    error_statuses = {"FAILED", "NOT_FOUND", "AMBIGUOUS", "INVALID_DATA"}
+    failed_keys = {
+        (item.get("sheet"), item.get("row_number"))
+        for item in previous.get("results", [])
+        if item.get("status") in error_statuses or item.get("verification", {}).get("ok") is False
+    }
+    failed_keys = {(sheet, row) for sheet, row in failed_keys if isinstance(sheet, str) and isinstance(row, int)}
+    if not failed_keys:
+        raise HTTPException(status_code=409, detail="No hay productos fallidos para reintentar.")
+
+    retry_id = uuid4().hex
+    retry_job = {
+        "job_id": retry_id,
+        "operation": "descriptions",
+        "status": "RUNNING",
+        "country": previous.get("country"),
+        "country_code": previous.get("country_code"),
+        "locale": previous.get("locale"),
+        "dry_run": previous.get("dry_run", True),
+        "filename": previous.get("filename"),
+        "product_scope": "failed",
+        "retry_of": job_id,
+        "schema_version": previous.get("schema_version", product_schema_version()),
+        "schema_source": previous.get("schema_source", "integrado"),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "completed": 0,
+        "retry_total": len(failed_keys),
+        "general_errors": [],
+    }
+    jobs[retry_id] = retry_job
+    request.app.state.strapi_product_inputs[retry_id] = {
+        **input_data,
+        "retry_keys": failed_keys,
+    }
+    request.app.state.bot_tasks[retry_id] = asyncio.create_task(
+        _run_description_job(
+            request.app,
+            retry_id,
+            input_data["content"],
+            input_data["filename"],
+            input_data["country_config"],
+            input_data.get("fichas_content"),
+            "failed",
+            selected_keys=failed_keys,
+        )
+    )
+    return retry_job
 
 
 @router.get("/jobs/{job_id}/download")
@@ -185,13 +262,25 @@ async def _run_job(application, job_id: str, content: bytes, filename: str, coun
         report_path.write_bytes(build_report(results, summary))
         job.update({"status": "SUCCESS" if not summary.failed and not summary.invalid_data else "WARNING", "completed": summary.total, "summary": summary.as_dict(), "results": [result.as_dict() for result in results], "report_path": str(report_path), "download_url": f"/api/strapi/products/jobs/{job_id}/download", "finished_at": datetime.now(timezone.utc).isoformat()})
     except Exception as error:  # noqa: BLE001
-        job.update({"status": "FAILED", "message": str(error), "finished_at": datetime.now(timezone.utc).isoformat()})
+        message = _humanize_general_error(error)
+        job.update({
+            "status": "FAILED",
+            "message": message,
+            "general_errors": [{
+                "section": "proceso general",
+                "field": None,
+                "message": message,
+                "explanation": "La ejecución no pudo completar la preparación o el procesamiento global.",
+                "action": "Corrige la configuración indicada y vuelve a ejecutar el proceso.",
+            }],
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        })
     finally:
         if client:
             await client.close()
 
 
-async def _run_description_job(application, job_id: str, content: bytes, filename: str, country_config, fichas_content: bytes | None = None, product_scope: str = "2") -> None:
+async def _run_description_job(application, job_id: str, content: bytes, filename: str, country_config, fichas_content: bytes | None = None, product_scope: str = "2", selected_keys: set[tuple[str, int]] | None = None) -> None:
     settings: Settings = application.state.settings
     job = application.state.strapi_product_jobs[job_id]
     client = None
@@ -199,7 +288,7 @@ async def _run_description_job(application, job_id: str, content: bytes, filenam
     balancer_catalog = None
     try:
         all_rows = read_product_rows(content)
-        rows = select_product_rows(all_rows, product_scope)
+        rows = select_product_rows_by_keys(all_rows, selected_keys) if selected_keys is not None else select_product_rows(all_rows, product_scope)
         job.update({"input_total": len(all_rows), "selected_total": len(rows)})
         client = StrapiClient(settings.strapi_url, _token(settings), settings.strapi_product_endpoint, settings.strapi_timeout_seconds)
         drive_client = GoogleDriveClient(
@@ -241,7 +330,19 @@ async def _run_description_job(application, job_id: str, content: bytes, filenam
         report_path.write_bytes(build_description_report(results, summary))
         job.update({"status": "SUCCESS" if not summary.failed and not summary.invalid_data else "WARNING", "completed": summary.total, "summary": summary.as_dict(), "results": [result.as_dict() for result in results], "blocking_reason": balancer_blockers[0] if balancer_blockers else None, "report_path": str(report_path), "download_url": f"/api/strapi/products/jobs/{job_id}/download", "finished_at": datetime.now(timezone.utc).isoformat()})
     except Exception as error:  # noqa: BLE001
-        job.update({"status": "FAILED", "message": str(error), "finished_at": datetime.now(timezone.utc).isoformat()})
+        message = _humanize_general_error(error)
+        job.update({
+            "status": "FAILED",
+            "message": message,
+            "general_errors": [{
+                "section": "proceso general",
+                "field": None,
+                "message": message,
+                "explanation": "La ejecución no pudo completar la preparación o el procesamiento global.",
+                "action": "Corrige la configuración indicada y vuelve a ejecutar el proceso.",
+            }],
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        })
     finally:
         if client:
             await client.close()

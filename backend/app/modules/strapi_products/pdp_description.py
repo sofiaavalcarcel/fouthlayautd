@@ -120,6 +120,64 @@ class LaborFieldContent:
     areas: tuple[tuple[str, str], ...]
     positions: tuple[str, ...]
     market_description: str
+    warnings: tuple[str, ...] = ()
+
+
+def build_product_diagnostic(
+    program: str,
+    section: str,
+    error: object,
+    *,
+    field: str | None = None,
+    source: str | None = None,
+    severity: str = "error",
+) -> dict[str, str | None]:
+    """Create a Spanish, field-level diagnostic suitable for the UI/report."""
+
+    message = str(error)
+    normalized = message.casefold()
+    display_message = message
+    if "cannot access local variable" in normalized:
+        display_message = "No se pudo leer la información actual del producto. Detalle técnico: " + message
+    if "payload pdp incompatible" in normalized:
+        code = "SCHEMA_VALIDATION"
+        explanation = "El contenido extraído no cumple el tipo o los valores permitidos por el esquema de Strapi."
+        action = "Revisa el campo indicado y el enum permitido; el producto no se actualizó con ese payload."
+    elif "no se encontró ficha" in normalized or "no se encontro ficha" in normalized:
+        code = "FICHA_NOT_FOUND"
+        explanation = "El producto no tiene una ficha coincidente en el archivo de fichas cargado."
+        action = "Agrega la ficha al archivo o deja que se conserve la URL que ya tenía el producto."
+    elif "google drive" in normalized or "oauth" in normalized:
+        code = "GOOGLE_DRIVE_ACCESS"
+        explanation = "No fue posible leer el documento fuente desde Google Drive."
+        action = "Verifica el acceso OAuth y que el documento esté compartido con la cuenta conectada."
+    elif "http 403" in normalized or "forbidden" in normalized:
+        code = "CMS_FORBIDDEN"
+        explanation = "El CMS rechazó la operación por permisos, ruta, locale o estado del contenido."
+        action = "Confirma el token, el locale, el endpoint y los permisos de actualización del producto."
+    elif "no se encontraron" in normalized or "no se encontro contenido" in normalized or "no se encontró contenido" in normalized:
+        code = "SOURCE_CONTENT_MISSING"
+        explanation = "La sección no tiene contenido en el documento fuente; no se inventaron datos ni se sobrescribió esa parte."
+        action = "Si la sección debe actualizarse, agrega el bloque correspondiente al PDP y vuelve a procesar el producto."
+    elif "no se encontró" in normalized or "no se encontro" in normalized:
+        code = "SOURCE_CONTENT_NOT_FOUND"
+        explanation = "No se encontró el contenido requerido en el documento o en Strapi."
+        action = "Verifica el nombre del producto, la sección esperada y el documento asociado."
+    else:
+        code = "PROCESSING_ERROR"
+        explanation = "La automatización encontró un error durante la etapa indicada."
+        action = "Revisa el detalle técnico y vuelve a intentar únicamente este producto después de corregir la causa."
+    return {
+        "program": program,
+        "section": section,
+        "field": field,
+        "code": code,
+        "severity": severity,
+        "message": display_message,
+        "explanation": explanation,
+        "action": action,
+        "source": source,
+    }
 
 
 def _docx_labor_blocks(document: Document) -> list[str]:
@@ -179,7 +237,7 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
-def _parse_area_items(lines: list[str]) -> list[tuple[str, str]]:
+def _parse_area_items(lines: list[str]) -> tuple[list[tuple[str, str]], list[str]]:
     """Group area titles with the descriptions that follow them.
 
     Some PDPs use ``Title: description`` on one line, while others place the
@@ -188,6 +246,7 @@ def _parse_area_items(lines: list[str]) -> list[tuple[str, str]]:
     """
     cleaned_lines = _dedupe(lines)
     areas: list[tuple[str, str]] = []
+    warnings: list[str] = []
     index = 0
     while index < len(cleaned_lines):
         line = cleaned_lines[index]
@@ -208,8 +267,12 @@ def _parse_area_items(lines: list[str]) -> list[tuple[str, str]]:
             index += 2
         else:
             areas.append((line, ""))
+            if index + 1 < len(cleaned_lines) and next_line and next_word_count < 8:
+                warnings.append(
+                    f"La línea de área {line!r} no tiene una descripción claramente identificable; se conservó sin descripción."
+                )
             index += 1
-    return areas
+    return areas, warnings
 
 
 def extract_labor_field_content(filename: str, content: bytes) -> LaborFieldContent:
@@ -231,11 +294,11 @@ def extract_labor_field_content(filename: str, content: bytes) -> LaborFieldCont
     positions_raw = _section_lines(blocks, "Puestos que podrías ocupar")
     market_raw = _section_lines(blocks, "Datos de mercado laboral")
 
-    areas = _parse_area_items(areas_raw)
+    areas, warnings = _parse_area_items(areas_raw)
     market = "\n\n".join(_dedupe(market_raw))
     if not areas and not positions_raw and not market:
         raise ValueError(f"No se encontró contenido de oportunidades profesionales en {filename}.")
-    return LaborFieldContent(tuple(areas), tuple(_dedupe(positions_raw)), market)
+    return LaborFieldContent(tuple(areas), tuple(_dedupe(positions_raw)), market, tuple(warnings))
 
 
 def extract_pdp_market_description(filename: str, content: bytes) -> str | None:

@@ -18,6 +18,21 @@ def test_payload_match_detects_nested_faq_text_difference():
     assert not payload_matches(current, desired)
 
 
+def test_payload_match_unwraps_component_attributes_from_strapi_read_shape():
+    current = {
+        "data": {
+            "id": 42,
+            "attributes": {
+                "title": {"desktop": "Beneficios"},
+                "benefits": [{"title": "Preparación"}],
+            },
+        },
+        "meta": {},
+    }
+    desired = {"title": {"desktop": "Beneficios"}, "benefits": [{"title": "Preparación"}]}
+    assert payload_matches(current, desired)
+
+
 def test_change_plan_keeps_a_reviewable_before_and_after_value():
     change = plan_change("commonQuestions", {"value": "old"}, {"value": "new"})
     assert change == {

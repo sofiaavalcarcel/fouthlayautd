@@ -95,3 +95,8 @@ def select_product_rows(rows: list[ProductRow], product_scope: str) -> list[Prod
     if count < 1:
         raise ValueError("product_scope debe ser un entero positivo o all.")
     return rows[:count]
+
+
+def select_product_rows_by_keys(rows: list[ProductRow], keys: set[tuple[str, int]]) -> list[ProductRow]:
+    """Select exact worksheet/row pairs for a product-only retry."""
+    return [row for row in rows if (row.sheet, row.row_number) in keys]

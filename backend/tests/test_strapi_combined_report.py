@@ -23,6 +23,11 @@ def test_combined_report_includes_both_processes_and_pdp_plan():
             "verification": {"ok": False}, "message": "No coincide", "changes": [
                 {"field": "content", "action": "update", "before": "old", "after": "new", "verified": False},
             ],
+            "diagnostics": [{
+                "section": "verificación posterior", "field": "content", "code": "PROCESSING_ERROR",
+                "severity": "error", "message": "No coincide", "explanation": "Explicación",
+                "action": "Reintentar", "source": "pdp.docx",
+            }],
         }],
     }
 
@@ -38,3 +43,7 @@ def test_combined_report_includes_both_processes_and_pdp_plan():
     assert plan.max_row == 2
     assert plan["A2"].value == "PDP"
     assert plan["F2"].value == "content"
+    diagnostic = workbook["Diagnóstico"]
+    assert diagnostic["A2"].value == "Licenciatura X"
+    assert diagnostic["E2"].value == "Error"
+    assert diagnostic["K2"].value == "pdp.docx"

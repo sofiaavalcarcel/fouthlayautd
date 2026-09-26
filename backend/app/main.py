@@ -92,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.weekly_auto_jobs = {}
     application.state.weekly_performance_jobs = {}
     application.state.strapi_product_jobs = {}
+    application.state.strapi_product_inputs = {}
     application.state.bot_tasks = {}
     application.include_router(router)
     application.include_router(leads_deploy_router)

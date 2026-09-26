@@ -12,7 +12,7 @@ from ...services.logging_service import get_logger
 from ...services.google_drive_client import GoogleDriveClient, GoogleDriveClientError, google_document_id
 from ...services.strapi_client import StrapiAmbiguousError, StrapiClient, StrapiClientError, StrapiNotFoundError
 from .models import ProductResult, ProductRow, ProductSummary
-from .pdp_description import LaborFieldContent, extract_benefits, extract_content_description, extract_curriculum, extract_description, extract_graduate_testimonies, extract_labor_field_content, extract_pdp_market_description, extract_program_explanation, extract_program_durations, extract_rvoe_numbers, extract_subjects, resolve_active_graduates_percentage
+from .pdp_description import LaborFieldContent, build_product_diagnostic, extract_benefits, extract_content_description, extract_curriculum, extract_description, extract_graduate_testimonies, extract_labor_field_content, extract_pdp_market_description, extract_program_explanation, extract_program_durations, extract_rvoe_numbers, extract_subjects, resolve_active_graduates_percentage
 from .common_questions import build_common_questions_payload, common_questions_match, extract_common_questions
 from .bullet_tabs import TAB_PREFIXES, build_bullet_tab_payload, extract_bullet_tabs, extract_study_modalities, has_desktop_cover_image, linked_tab_prefix
 from .fichas import FichasLookup
@@ -128,13 +128,14 @@ def program_article(program: str) -> str:
 
 
 def merge_labor_field_content(contents: list[LaborFieldContent]) -> LaborFieldContent:
-    """Merge PDP and FT labor sections while preserving source order and removing duplicates."""
+    """Merge explicitly selected labor sources while preserving source order."""
     areas: list[tuple[str, str]] = []
     positions: list[str] = []
     market: list[str] = []
     seen_areas: set[tuple[str, str]] = set()
     seen_positions: set[str] = set()
     seen_market: set[str] = set()
+    warnings: list[str] = []
     for content in contents:
         for title, description in content.areas:
             key = (title.casefold(), description.casefold())
@@ -149,7 +150,10 @@ def merge_labor_field_content(contents: list[LaborFieldContent]) -> LaborFieldCo
         if content.market_description and content.market_description.casefold() not in seen_market:
             seen_market.add(content.market_description.casefold())
             market.append(content.market_description)
-    return LaborFieldContent(tuple(areas), tuple(positions), "\n\n".join(market))
+        for warning in content.warnings:
+            if warning not in warnings:
+                warnings.append(warning)
+    return LaborFieldContent(tuple(areas), tuple(positions), "\n\n".join(market), tuple(warnings))
 
 
 def build_student_profile_payload(current: dict | None, program: str, tab_ids: list[int]) -> dict:
@@ -320,30 +324,67 @@ class StrapiDescriptionRunner:
             return source
         return f"https://docs.google.com/document/d/{document_id}/export?format=docx"
 
-    async def process(self, row: ProductRow) -> ProductResult:
+    async def process(self, row: ProductRow, progress_label: str | None = None) -> ProductResult:
         if self.progress_callback:
-            self.progress_callback(f"Procesando: {row.program}")
+            self.progress_callback(progress_label or f"Procesando: {row.program}")
         changes: list[dict] = []
         verification: dict = {"ok": None, "performed": False}
+        diagnostics: list[dict] = []
+        preserved_fields: list[str] = []
+        stage = "lectura del PDP"
+        source_map: dict[str, str | None] = {
+            "pdp": row.document,
+            "ft": row.ft_document,
+            "fichas": "archivo de fichas" if self.fichas_lookup else None,
+        }
         description: str | None = None
         siu_key: str | None = None
         try:
+            stage = "lectura del PDP"
             source, content = await self._document_content(row.document or "")
+            source_map["pdp"] = source
             benefit_texts = extract_benefits(source, content)
             bullet_source, bullet_content = source, content
             if row.ft_document:
+                stage = "lectura del FT"
                 bullet_source, bullet_content = await self._document_content(row.ft_document)
+                source_map["ft"] = bullet_source
+            source_map.update({
+                "profiles": source,
+                "benefits": source,
+                "graduates": source,
+                "laborField": source,
+                "modalities": bullet_source,
+                "durations": "PDP + FT" if bullet_source != source else source,
+            })
+            # Source of truth by field: the PDP owns content sections; the FT
+            # is consulted only for modality and duration metadata.
+            stage = "extracción de modalidades y oportunidades profesionales"
             study_modalities = extract_study_modalities(bullet_source, bullet_content)
-            labor_sources = [(source, content)]
-            if bullet_source != source or bullet_content != content:
-                labor_sources.append((bullet_source, bullet_content))
             active_graduates_percentage = resolve_active_graduates_percentage(source, content)
+            if not benefit_texts:
+                diagnostics.append(build_product_diagnostic(
+                    row.program,
+                    "benefits",
+                    "No se encontró contenido de beneficios en el PDP.",
+                    field="benefits",
+                    source=source,
+                    severity="info",
+                ))
             labor_contents: list[LaborFieldContent] = []
-            for labor_source, labor_content in labor_sources:
-                try:
-                    labor_contents.append(extract_labor_field_content(labor_source, labor_content))
-                except ValueError:
-                    continue
+            try:
+                labor_contents.append(extract_labor_field_content(source, content))
+            except ValueError as error:
+                # An empty PDP labor section is valid: preserve existing CMS
+                # content instead of importing unrelated FT text.
+                diagnostics.append(build_product_diagnostic(
+                    row.program,
+                    "laborField",
+                    str(error),
+                    field="areasToWorkItems/positionsTags/marketDescription",
+                    source=source,
+                    severity="info",
+                ))
             labor_field_content = merge_labor_field_content(labor_contents)
             # marketDescription comes exclusively from the PDP's Coms block;
             # FT or Web content must never be copied into this field.
@@ -355,10 +396,25 @@ class StrapiDescriptionRunner:
                 labor_field_content.areas,
                 labor_field_content.positions,
                 pdp_market_description or "",
+                labor_field_content.warnings,
+            )
+            diagnostics.extend(
+                build_product_diagnostic(
+                    row.program,
+                    "laborField",
+                    warning,
+                    field="areasToWorkItems",
+                    source=source,
+                    severity="warning",
+                )
+                for warning in labor_field_content.warnings
             )
             rvoe_numbers: list[str] = []
-            for validity_source, validity_content in labor_sources:
-                for number in extract_rvoe_numbers(validity_source, validity_content):
+            for number in extract_rvoe_numbers(source, content):
+                if number not in rvoe_numbers:
+                    rvoe_numbers.append(number)
+            if bullet_source != source or bullet_content != content:
+                for number in extract_rvoe_numbers(bullet_source, bullet_content):
                     if number not in rvoe_numbers:
                         rvoe_numbers.append(number)
             graduate_testimonies: list[tuple[str, str]] = []
@@ -417,6 +473,7 @@ class StrapiDescriptionRunner:
                     # este programa, se conserva el valor actual y se continúa
                     # con todas las demás secciones del PDP.
                     ficha_warning = str(error)
+            stage = "buscar producto en Strapi"
             product = await self.client.find_product(row.program, self.locale, title_field=self.title_field, seo_field="seo", status=self.status)
             identifier = product.get("id") or product.get("documentId")
             if identifier is None:
@@ -451,6 +508,7 @@ class StrapiDescriptionRunner:
                         siu_key = str(existing_siu_key)
                     else:
                         raise
+            stage = "validar y construir tabsBulletSection"
             tabs_bullet_section_payload = None
             bullet_tab_operations = []
             manages_bullet_tabs = all(
@@ -462,8 +520,22 @@ class StrapiDescriptionRunner:
             )
             if manages_bullet_tabs and hasattr(self.client, "get_product_tabs_bullet_section"):
                 # Bullet Tabs come exclusively from the PDP. The FT remains
-                # available for modalities, labor data, durations and graduates.
-                bullet_tab_sections = extract_bullet_tabs(source, content)
+                # available only for modality and duration metadata.
+                try:
+                    bullet_tab_sections = extract_bullet_tabs(source, content)
+                except ValueError as error:
+                    # An ambiguous/empty tab must not prevent the remaining
+                    # PDP fields from being synchronized. Existing tabs stay
+                    # untouched and the report explains the skipped section.
+                    bullet_tab_sections = {}
+                    diagnostics.append(build_product_diagnostic(
+                        row.program,
+                        "tabsBulletSection",
+                        str(error),
+                        field="tabs",
+                        source=source,
+                        severity="warning",
+                    ))
                 section = await self.client.get_product_tabs_bullet_section(identifier, self.locale)
                 tab_ids = []
                 for tab_prefix in TAB_PREFIXES:
@@ -528,6 +600,7 @@ class StrapiDescriptionRunner:
                 }
                 if section.get("id") is not None:
                     tabs_bullet_section_payload["id"] = section["id"]
+            stage = "construir programas y duraciones"
             programs_payload: list[dict] | None = None
             if durations:
                 existing = await self.client.get_product_programs(identifier)
@@ -769,6 +842,7 @@ class StrapiDescriptionRunner:
                 program_explanation_payload.pop("__component", None)
                 program_explanation_payload["coverImageSectionConfig"] = section
 
+            stage = "construir laborField"
             labor_field_payload = None
             if labor_field_content.areas or labor_field_content.positions or labor_field_content.market_description or pdp_market_description is not None:
                 if not hasattr(self.client, "find_upload_file_by_name"):
@@ -933,16 +1007,22 @@ class StrapiDescriptionRunner:
             if graduates_payload is not None:
                 attributes["graduates"] = graduates_payload
 
+            stage = "comparar payload con Strapi"
             update_attributes: dict = {}
             for field_name, desired in attributes.items():
                 current = current_attributes.get(field_name)
                 if not payload_matches(current, desired):
                     update_attributes[field_name] = desired
                     changes.append(plan_change(field_name, current, desired))
+            preserved_fields = [
+                field_name for field_name in attributes
+                if field_name not in update_attributes
+            ]
 
             # Validate only fields that will actually be sent. Existing Strapi
             # components can contain legacy nulls/types that are unrelated to
             # this run and should not block a focused PDP synchronization.
+            stage = "validar payload contra el esquema"
             schema_errors = validate_product_payload(update_attributes, self.product_schema)
             if schema_errors:
                 raise ValueError("Payload PDP incompatible con el esquema capturado de Strapi: " + "; ".join(schema_errors))
@@ -960,6 +1040,7 @@ class StrapiDescriptionRunner:
                 ))
 
             if not self.dry_run:
+                stage = "actualizar Strapi"
                 if manages_bullet_tabs:
                     persisted_tab_ids = []
                     for existing_tab, payload, tab_name, needs_write in tab_changes:
@@ -994,6 +1075,12 @@ class StrapiDescriptionRunner:
                         update_attributes["studentProfile"] = student_profile_payload
                         changes.append(plan_change("studentProfile", current_attributes.get("studentProfile"), student_profile_payload))
 
+                # Revalidate after dynamic tab/student-profile links are added;
+                # these fields must go through the same pre-write schema gate.
+                schema_errors = validate_product_payload(update_attributes, self.product_schema)
+                if schema_errors:
+                    raise ValueError("Payload PDP incompatible con el esquema capturado de Strapi: " + "; ".join(schema_errors))
+
                 if update_attributes:
                     try:
                         await self.client.update_product(identifier, update_attributes, locale=self.locale)
@@ -1003,6 +1090,7 @@ class StrapiDescriptionRunner:
                         if "locale" not in str(error):
                             raise
                         await self.client.update_product(identifier, update_attributes)
+                stage = "verificación posterior"
                 verification = {"ok": True, "fields": [], "tabs": []}
                 if hasattr(self.client, "get_product_sync_attributes"):
                     verified_attributes = await self.client.get_product_sync_attributes(identifier, self.locale)
@@ -1045,24 +1133,26 @@ class StrapiDescriptionRunner:
                     failed_subjects = [item.get("name") for item in verification.get("subjects", []) if item.get("ok") is False]
                     if failed_subjects:
                         message = "No se pudieron confirmar las asignaturas creadas: " + ", ".join(name for name in failed_subjects if name)
-                        return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=message, description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification)
-
-                    # Strapi puede devolver componentes, relaciones e imágenes
-                    # con una estructura distinta aunque el contenido ya esté
-                    # guardado. No tratamos esa diferencia técnica como error.
+                        diagnostics.append(build_product_diagnostic(row.program, "subjects", message, field="subjects", source=source_map.get("pdp")))
+                        return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=message, description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
                     failed_checks = [item for item in verification["fields"] + verification["tabs"] if item.get("ok") is False]
                     failed_names = [item.get("field") or item.get("name") for item in failed_checks]
-                    verification["warnings"] = [
-                        "Strapi devolvió una estructura interna distinta en: "
-                        + ", ".join(name for name in failed_names if name)
-                    ] if failed_names else []
-                    verification["ok"] = True
-                    for item in verification["fields"] + verification["tabs"]:
-                        if item.get("ok") is False:
-                            item["ok"] = True
-                    for item in changes:
-                        if item.get("verified") is False:
-                            item["verified"] = True
+                    message = "Verificación posterior fallida: " + ", ".join(name for name in failed_names if name)
+                    for failed in failed_checks:
+                        failed_field = failed.get("field") or failed.get("name") or "campo desconocido"
+                        diagnostics.append(build_product_diagnostic(
+                            row.program,
+                            "verificación posterior",
+                            f"El valor guardado no coincide con el payload esperado en {failed_field}.",
+                            field=str(failed_field),
+                            source=source_map.get("pdp"),
+                        ))
+                    return ProductResult(
+                        row.sheet, row.row_number, row.program, self.country, "FAILED",
+                        message=message, description=description, siu_key=siu_key, banner_key=siu_key,
+                        changes=changes, verification=verification, diagnostics=diagnostics,
+                        preserved_fields=preserved_fields, sources=source_map,
+                    )
             else:
                 verification = {"ok": None, "performed": False, "message": "Dry run: no se escribieron datos en Strapi."}
             message = f"Descripcion extraida de {source}"
@@ -1070,6 +1160,14 @@ class StrapiDescriptionRunner:
                 message += "; Información sincronizada conforme a los documentos"
             if programs_error:
                 message += f"; Programas no modificados: {programs_error}"
+                diagnostics.append(build_product_diagnostic(
+                    row.program,
+                    "programs",
+                    programs_error,
+                    field="programs/resultsDuration/modalitiesProgram",
+                    source=source_map.get("pdp"),
+                    severity="info",
+                ))
             elif duration_sources_message:
                 message += f"; {duration_sources_message}"
             if missing_subjects:
@@ -1090,10 +1188,26 @@ class StrapiDescriptionRunner:
                 message += f"; Preguntas frecuentes no actualizadas: {faq_warning}"
             if ficha_warning:
                 message += f"; Ficha no actualizada: {ficha_warning}"
+                diagnostics.append(build_product_diagnostic(
+                    row.program,
+                    "downloadProgram",
+                    ficha_warning,
+                    field="downloadProgram",
+                    source=source_map.get("fichas"),
+                    severity="info",
+                ))
             if graduate_testimonies:
                 message += f"; Testimonios de egresados extraídos del PDP: {len(graduate_testimonies)}"
             else:
                 message += "; No se encontraron testimonios de egresados en el PDP"
+                diagnostics.append(build_product_diagnostic(
+                    row.program,
+                    "graduates",
+                    "No se encontraron testimonios de egresados en el PDP.",
+                    field="graduates",
+                    source=source_map.get("graduates"),
+                    severity="info",
+                ))
             message += f"; activeGraduatesPercentaje sincronizado: {active_graduates_percentage}%"
             if self.siu_key_lookup is None:
                 message += "; siuKey no consultada: el lookup del Balanceador no está configurado"
@@ -1102,21 +1216,26 @@ class StrapiDescriptionRunner:
             elif not changes:
                 message += "; Sin cambios: Strapi ya coincide con el documento"
             result_status = "DRY_RUN" if self.dry_run else ("UPDATED" if changes else "SKIPPED")
-            result = ProductResult(row.sheet, row.row_number, row.program, self.country, result_status, message=message, description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification)
+            result = ProductResult(row.sheet, row.row_number, row.program, self.country, result_status, message=message, description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
             self.logger.info("Strapi descriptions result sheet=%s row=%s program=%s country=%s status=%s", row.sheet, row.row_number, row.program, self.country, result.status)
             return result
         except (StrapiNotFoundError, StrapiAmbiguousError) as error:
             status = "NOT_FOUND" if isinstance(error, StrapiNotFoundError) else "AMBIGUOUS"
-            return ProductResult(row.sheet, row.row_number, row.program, self.country, status, message=str(error), changes=changes, verification=verification)
+            diagnostics.append(build_product_diagnostic(row.program, stage, error, source=source_map.get("pdp")))
+            return ProductResult(row.sheet, row.row_number, row.program, self.country, status, message=str(error), changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
         except (ValueError, httpx.HTTPError) as error:
             self.logger.warning("Strapi descriptions invalid row=%s program=%s error=%s", row.row_number, row.program, error)
-            return ProductResult(row.sheet, row.row_number, row.program, self.country, "INVALID_DATA", message=str(error), changes=changes, verification=verification)
+            diagnostics.append(build_product_diagnostic(row.program, stage, error, source=source_map.get("pdp")))
+            return ProductResult(row.sheet, row.row_number, row.program, self.country, "INVALID_DATA", message=str(error), changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
         except StrapiClientError as error:
-            return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), changes=changes, verification=verification)
+            diagnostics.append(build_product_diagnostic(row.program, stage, error, source=source_map.get("pdp")))
+            return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
         except GoogleDriveClientError as error:
-            return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), changes=changes, verification=verification)
+            diagnostics.append(build_product_diagnostic(row.program, stage, error, source=source_map.get("pdp")))
+            return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
         except BalancerCatalogError as error:
-            return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification)
+            diagnostics.append(build_product_diagnostic(row.program, "balanceador", error, field="siuKey", source="Balanceador"))
+            return ProductResult(row.sheet, row.row_number, row.program, self.country, "FAILED", message=str(error), description=description, siu_key=siu_key, banner_key=siu_key, changes=changes, verification=verification, diagnostics=diagnostics, preserved_fields=preserved_fields, sources=source_map)
         except Exception as error:  # noqa: BLE001
             # Cada producto debe ser independiente. Un fallo inesperado en un
             # paso de este producto no puede detener el lote seleccionado.
@@ -1140,14 +1259,17 @@ class StrapiDescriptionRunner:
                 banner_key=siu_key,
                 changes=changes,
                 verification=verification,
+                diagnostics=diagnostics + [build_product_diagnostic(row.program, stage, error, source=source_map.get("pdp"))],
+                preserved_fields=preserved_fields,
+                sources=source_map,
             )
 
     async def run(self, rows: list[ProductRow]) -> tuple[list[ProductResult], ProductSummary]:
         # Mantener el orden del Excel, pero garantizar que todos los productos
         # del alcance se intenten aunque uno falle.
         results = []
-        for row in rows:
-            results.append(await self.process(row))
+        for index, row in enumerate(rows, start=1):
+            results.append(await self.process(row, f"Procesando: {row.program} ({index}/{len(rows)})"))
         counts = Counter(result.status for result in results)
         return results, ProductSummary(
             total=len(results), updated=counts["UPDATED"], dry_run=counts["DRY_RUN"], skipped=counts["SKIPPED"],

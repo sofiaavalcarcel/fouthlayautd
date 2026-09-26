@@ -28,6 +28,9 @@ class ProductResult:
     banner_key: str | None = None
     changes: list[dict[str, Any]] = field(default_factory=list)
     verification: dict[str, Any] = field(default_factory=dict)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    preserved_fields: list[str] = field(default_factory=list)
+    sources: dict[str, str | None] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

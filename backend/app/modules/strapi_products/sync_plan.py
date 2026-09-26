@@ -5,15 +5,29 @@ from typing import Any
 
 
 def _unwrap_relation(value: Any) -> Any:
-    while isinstance(value, dict) and set(value).issubset({"data", "meta"}) and "data" in value:
+    while isinstance(value, dict) and "data" in value and (
+        set(value).issubset({"data", "meta"}) or "attributes" not in value
+    ):
         value = value["data"]
     return value
 
 
+def _normalize_current_for_desired(current: Any, desired: Any) -> Any:
+    """Handle the read shapes Strapi uses for relations/components."""
+    current = _unwrap_relation(current)
+    if isinstance(current, dict) and isinstance(desired, dict):
+        desired_keys = set(desired)
+        if "attributes" in current and desired_keys and not desired_keys.issubset(current):
+            attributes = current.get("attributes")
+            if isinstance(attributes, dict) and desired_keys.intersection(attributes):
+                return attributes
+    return current
+
+
 def payload_matches(current: Any, desired: Any) -> bool:
     """Compare a Strapi read response with a partial write payload."""
-    current = _unwrap_relation(current)
     desired = _unwrap_relation(desired)
+    current = _normalize_current_for_desired(current, desired)
     if isinstance(desired, dict):
         if not isinstance(current, dict):
             return False
